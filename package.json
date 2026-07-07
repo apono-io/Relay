@@ -1,0 +1,47 @@
+{
+  "name": "relay",
+  "version": "1.0.0",
+  "description": "Relay - internal app to reduce PR review cycle time",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "backend",
+      "frontend"
+    ],
+    "nohoist": [
+      "**/typeorm",
+      "**/typeorm/**",
+      "**/@nestjs/**",
+      "**/@apollo/**",
+      "**/apollo-server-**",
+      "**/graphql",
+      "**/graphql/**"
+    ]
+  },
+  "scripts": {
+    "dev": "tilt up --port=10351",
+    "install:backend": "cd backend && yarn install",
+    "install:frontend": "cd frontend && yarn install",
+    "build": "yarn workspace backend build && yarn workspace frontend build",
+    "lint": "yarn workspace backend lint && yarn workspace frontend lint",
+    "test": "yarn workspace backend test"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "yarn": ">=1.22.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apono-io/Relay"
+  },
+  "keywords": [
+    "apono",
+    "relay",
+    "pull-requests",
+    "cycle-time",
+    "nestjs",
+    "react",
+    "graphql"
+  ],
+  "license": "UNLICENSED"
+}
