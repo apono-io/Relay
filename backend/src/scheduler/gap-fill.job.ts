@@ -19,7 +19,6 @@ export class GapFillJob {
     if (!this.github.isConfigured()) {
       return;
     }
-    this.logger.log('Gap-fill tick: re-pulling open + recently-merged PRs per repo');
-    throw new Error('not implemented: re-pull recent PRs per repo, fill dropped events (spec task 10 - local live mechanism)');
+    this.logger.debug('Gap-fill tick skipped: not implemented yet (spec task 10)');
   }
 }

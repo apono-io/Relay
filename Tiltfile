@@ -1,5 +1,9 @@
 # Relay Tiltfile
-# Orchestrates the local development environment (backend + frontend + Postgres).
+# Orchestrates the local development environment (Postgres + backend + frontend).
+
+# Postgres runs in a container (host port 5433 to avoid clashing with other local envs).
+docker_compose('./docker-compose.yml')
+dc_resource('postgres', labels=['infra'])
 
 local_resource(
   'frontend-install',
@@ -15,11 +19,23 @@ local_resource(
   labels=['setup']
 )
 
+# Backend waits for Postgres (compose creates the `relay` database on first start).
 local_resource(
-  'validate-db',
-  cmd='./scripts/validate-db.sh',
-  deps=['scripts/validate-db.sh'],
-  labels=['setup']
+  'backend',
+  cmd='echo "Starting backend"',
+  serve_cmd='cd backend && yarn start:dev',
+  deps=['backend/src'],
+  ignore=['backend/src/schema.gql'],
+  resource_deps=['backend-install', 'postgres'],
+  readiness_probe=probe(
+    period_secs=5,
+    http_get=http_get_action(port=3000, path='/health'),
+  ),
+  labels=['backend'],
+  links=[
+    link('http://localhost:3000', 'Backend API'),
+    link('http://localhost:3000/graphql', 'GraphQL Playground')
+  ]
 )
 
 local_resource(
@@ -28,26 +44,14 @@ local_resource(
   serve_cmd='cd frontend && yarn dev',
   deps=['frontend/src'],
   resource_deps=['frontend-install'],
+  readiness_probe=probe(
+    period_secs=5,
+    http_get=http_get_action(port=5173, path='/'),
+  ),
   labels=['frontend'],
   links=[link('http://localhost:5173', 'Relay UI')]
 )
 
-local_resource(
-  'backend',
-  cmd='echo "Starting backend"',
-  serve_cmd='cd backend && yarn start:dev',
-  deps=['backend/src'],
-  ignore=['backend/src/schema.gql'],
-  resource_deps=['backend-install', 'validate-db'],
-  trigger_mode=TRIGGER_MODE_MANUAL,
-  auto_init=True,
-  labels=['backend'],
-  links=[
-    link('http://localhost:3000', 'Backend API'),
-    link('http://localhost:3000/graphql', 'GraphQL Playground')
-  ]
-)
-
 print("Relay Frontend: http://localhost:5173")
-print("Relay Backend: http://localhost:3000")
-print("Relay GraphQL Playground: http://localhost:3000/graphql")
+print("Relay Backend:  http://localhost:3000")
+print("GraphQL:        http://localhost:3000/graphql")

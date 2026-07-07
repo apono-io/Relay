@@ -11,6 +11,11 @@ export function LoginPage() {
         <Button variant="contained" size="large" href={`${apiUrl}/auth/google`}>
           Sign in with Google
         </Button>
+        {import.meta.env.DEV && (
+          <Button variant="text" size="small" href={`${apiUrl}/auth/dev-login`}>
+            Dev login (local only)
+          </Button>
+        )}
       </Stack>
     </Box>
   );
