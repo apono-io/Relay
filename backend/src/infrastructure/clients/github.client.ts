@@ -6,6 +6,58 @@ import { LoggerService } from '../logging/logger.service';
 
 type AuthMode = 'pat' | 'app';
 
+const PR_TIMELINE_QUERY = `
+query PullRequestTimelines($owner: String!, $name: String!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(first: $first, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        number
+        title
+        url
+        isDraft
+        createdAt
+        updatedAt
+        mergedAt
+        closedAt
+        author { login __typename }
+        mergedBy { login }
+        commits(last: 100) {
+          nodes {
+            commit {
+              oid
+              authoredDate
+              committedDate
+              pushedDate
+              author { user { login } }
+              statusCheckRollup { state }
+            }
+          }
+        }
+        reviews(first: 100) {
+          nodes { id state submittedAt author { login } }
+        }
+        comments(first: 100) {
+          nodes { id createdAt author { login } }
+        }
+        timelineItems(
+          first: 100
+          itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]
+        ) {
+          nodes {
+            __typename
+            ... on ReadyForReviewEvent { createdAt actor { login } }
+            ... on ConvertToDraftEvent { createdAt actor { login } }
+            ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
+            ... on ReviewRequestRemovedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
+          }
+        }
+      }
+    }
+  }
+}`;
+
 @Injectable()
 export class GitHubClient {
   private readonly authMode: AuthMode;
@@ -32,6 +84,21 @@ export class GitHubClient {
       return !!this.pat;
     }
     return !!(this.appId && this.installationId && this.privateKey);
+  }
+
+  async fetchPullRequestTimelines(
+    repo: string,
+    opts: { first?: number; after?: string | null } = {},
+  ): Promise<{ nodes: any[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }> {
+    const [owner, name] = repo.split('/');
+    const data = await this.graphql<{ repository: { pullRequests: any } }>(PR_TIMELINE_QUERY, {
+      owner,
+      name,
+      first: opts.first ?? 25,
+      after: opts.after ?? null,
+    });
+    const connection = data.repository.pullRequests;
+    return { nodes: connection.nodes, pageInfo: connection.pageInfo };
   }
 
   async graphql<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {

@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { PullRequest } from './entities/pull-request.entity';
 import { PrEvent } from './entities/pr-event.entity';
 import { PhaseComputer } from './phase-computer.service';
-import { WaitingOn } from './pr-enums';
+import { WaitingOn, PrState } from './pr-enums';
 
 @Injectable()
 export class PullRequestsService {
@@ -44,7 +44,10 @@ export class PullRequestsService {
     const slaMinutes = Number(this.configService.get('DEFAULT_REVIEW_SLA_MINUTES') ?? 120);
     const computed = this.phaseComputer.compute(events, slaMinutes);
 
+    const state = computed.mergedAt ? PrState.MERGED : computed.closedAt ? PrState.CLOSED : PrState.OPEN;
+
     Object.assign(pr, {
+      state,
       firstCommitAt: computed.firstCommitAt,
       openedAt: computed.openedAt,
       readyAt: computed.readyAt,
