@@ -145,6 +145,9 @@ export class PullRequest {
   @Column({ type: 'timestamptz', nullable: true })
   reviewDueAt?: Date;
 
+  @Column({ type: 'jsonb', default: [] })
+  waitRounds: { round: number; reviewerWaitSeconds: number | null; authorWaitSeconds: number | null }[];
+
   @OneToMany(() => PrEvent, (event) => event.pullRequest)
   events: PrEvent[];
 

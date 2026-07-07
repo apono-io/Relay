@@ -71,6 +71,7 @@ export class PullRequestsService {
       waitingOn: computed.waitingOn,
       requestedReviewers: computed.requestedReviewers,
       reviewDueAt: computed.reviewDueAt,
+      waitRounds: computed.waitRounds,
     });
 
     return this.prRepo.save(pr);
