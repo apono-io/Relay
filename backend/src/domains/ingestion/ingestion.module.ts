@@ -4,12 +4,13 @@ import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { PullRequestsModule } from '@/domains/pull-requests/pull-requests.module';
 import { GithubEventNormalizer } from './github-event-normalizer.service';
 import { BackfillService } from './backfill.service';
+import { PrIngestService } from './pr-ingest.service';
 import { IngestionController } from './ingestion.controller';
 
 @Module({
   imports: [TypeOrmModule.forFeature([PrEvent]), PullRequestsModule],
   controllers: [IngestionController],
-  providers: [GithubEventNormalizer, BackfillService],
-  exports: [GithubEventNormalizer, BackfillService],
+  providers: [GithubEventNormalizer, BackfillService, PrIngestService],
+  exports: [GithubEventNormalizer, BackfillService, PrIngestService],
 })
 export class IngestionModule {}

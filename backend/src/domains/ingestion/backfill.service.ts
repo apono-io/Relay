@@ -1,14 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { subQuarters } from 'date-fns';
 import { GitHubClient } from '@/infrastructure/clients/github.client';
 import { LoggerService } from '@/infrastructure/logging/logger.service';
-import { GithubEventNormalizer, NormalizedEvent, NormalizedPullRequest } from './github-event-normalizer.service';
-import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
-import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entity';
-import { PullRequestsService } from '@/domains/pull-requests/pull-requests.service';
+import { GithubEventNormalizer } from './github-event-normalizer.service';
+import { PrIngestService } from './pr-ingest.service';
 
 export type BackfillSummary = {
   reposProcessed: number;
@@ -19,24 +15,15 @@ export type BackfillSummary = {
 @Injectable()
 export class BackfillService {
   constructor(
-    @InjectRepository(PrEvent) private readonly eventRepo: Repository<PrEvent>,
-    @InjectRepository(PullRequest) private readonly prRepo: Repository<PullRequest>,
     private readonly github: GitHubClient,
     private readonly normalizer: GithubEventNormalizer,
-    private readonly pullRequests: PullRequestsService,
+    private readonly ingest: PrIngestService,
     private readonly configService: ConfigService,
     private readonly logger: LoggerService,
   ) {}
 
-  private repos(): string[] {
-    return (this.configService.get<string>('GITHUB_REPOS') || '')
-      .split(',')
-      .map((r) => r.trim())
-      .filter(Boolean);
-  }
-
   async run(): Promise<BackfillSummary> {
-    const repos = this.repos();
+    const repos = this.ingest.repos();
     const quarters = Number(this.configService.get('BACKFILL_QUARTERS') ?? 3);
     const maxPrs = Number(this.configService.get('BACKFILL_MAX_PRS') ?? 0);
     const cutoff = subQuarters(new Date(), quarters);
@@ -75,7 +62,7 @@ export class BackfillService {
           break;
         }
         const { pullRequest, events } = this.normalizer.normalizeBackfillNode(repo, node);
-        eventsInserted += await this.persistPr(pullRequest, events);
+        eventsInserted += await this.ingest.persistPr(pullRequest, events);
         prsProcessed += 1;
         if (maxPrs && prsProcessed >= maxPrs) {
           this.logger.log(`${repo}: hit max ${maxPrs} PRs, stopping`);
@@ -90,46 +77,5 @@ export class BackfillService {
     }
 
     return { prsProcessed, eventsInserted };
-  }
-
-  private async persistPr(header: NormalizedPullRequest, events: NormalizedEvent[]): Promise<number> {
-    let pr = await this.prRepo.findOne({ where: { repo: header.repo, number: header.number } });
-    if (!pr) {
-      pr = this.prRepo.create({ repo: header.repo, number: header.number });
-    }
-    Object.assign(pr, {
-      title: header.title,
-      url: header.url,
-      authorLogin: header.authorLogin,
-      isDraft: header.isDraft,
-      isBot: header.isBot,
-      isRevert: header.isRevert,
-    });
-    pr = await this.prRepo.save(pr);
-
-    const rows = events.map((e) => ({
-      prId: pr!.id,
-      type: e.type,
-      actorLogin: e.actorLogin,
-      payload: e.payload as Record<string, any>,
-      occurredAt: e.occurredAt,
-      source: e.source,
-      externalId: e.externalId,
-    }));
-
-    let inserted = 0;
-    if (rows.length) {
-      const result = await this.eventRepo
-        .createQueryBuilder()
-        .insert()
-        .into(PrEvent)
-        .values(rows)
-        .orIgnore()
-        .execute();
-      inserted = result.identifiers.filter(Boolean).length;
-    }
-
-    await this.pullRequests.recomputeFromEvents(pr.id);
-    return inserted;
   }
 }

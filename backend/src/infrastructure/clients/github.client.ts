@@ -7,9 +7,9 @@ import { LoggerService } from '../logging/logger.service';
 type AuthMode = 'pat' | 'app';
 
 const PR_TIMELINE_QUERY = `
-query PullRequestTimelines($owner: String!, $name: String!, $first: Int!, $after: String) {
+query PullRequestTimelines($owner: String!, $name: String!, $first: Int!, $after: String, $orderField: IssueOrderField!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(first: $first, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
+    pullRequests(first: $first, after: $after, orderBy: { field: $orderField, direction: DESC }) {
       pageInfo { hasNextPage endCursor }
       nodes {
         id
@@ -88,7 +88,7 @@ export class GitHubClient {
 
   async fetchPullRequestTimelines(
     repo: string,
-    opts: { first?: number; after?: string | null } = {},
+    opts: { first?: number; after?: string | null; orderBy?: 'CREATED_AT' | 'UPDATED_AT' } = {},
   ): Promise<{ nodes: any[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }> {
     const [owner, name] = repo.split('/');
     const data = await this.graphql<{ repository: { pullRequests: any } }>(PR_TIMELINE_QUERY, {
@@ -96,6 +96,7 @@ export class GitHubClient {
       name,
       first: opts.first ?? 25,
       after: opts.after ?? null,
+      orderField: opts.orderBy ?? 'CREATED_AT',
     });
     const connection = data.repository.pullRequests;
     return { nodes: connection.nodes, pageInfo: connection.pageInfo };
