@@ -28,8 +28,8 @@ import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
       ...dataSource.options,
       entities: [Person, PullRequest, PrEvent],
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
-      synchronize: process.env.NODE_ENV !== 'production',
-      migrationsRun: process.env.NODE_ENV === 'production',
+      synchronize: false,
+      migrationsRun: true,
     }),
     GraphQLModule.forRootAsync<ApolloDriverConfig>({
       driver: ApolloDriver,
