@@ -1,19 +1,51 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { format } from 'date-fns';
 import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entity';
-import { PrState, WaitingOn } from '@/domains/pull-requests/pr-enums';
-import { DashboardSummary, WaitMetric } from './models/dashboard.model';
+import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
+import { PrEventType, PrState, WaitingOn } from '@/domains/pull-requests/pr-enums';
+import {
+  DashboardSummary,
+  ReviewerLoad,
+  StuckPr,
+  WaitMetric,
+  WeeklyPhasePoint,
+  WeeklyQualityPoint,
+} from './models/dashboard.model';
 
 const MAX_ROUNDS = 5;
+const STUCK_LIMIT = 25;
 
 @Injectable()
 export class MetricsService {
-  constructor(@InjectRepository(PullRequest) private readonly prRepo: Repository<PullRequest>) {}
+  constructor(
+    @InjectRepository(PullRequest) private readonly prRepo: Repository<PullRequest>,
+    @InjectRepository(PrEvent) private readonly eventRepo: Repository<PrEvent>,
+  ) {}
 
   async dashboard(repo?: string, now: Date = new Date()): Promise<DashboardSummary> {
     const prs = await this.prRepo.find({ where: repo ? { repo } : {} });
-    return MetricsService.buildSummary(prs, now);
+    const reviewerLogins = await this.reviewerLogins(repo);
+    return MetricsService.buildSummary(prs, now, reviewerLogins);
+  }
+
+  private async reviewerLogins(repo?: string): Promise<string[]> {
+    const query = this.eventRepo
+      .createQueryBuilder('event')
+      .innerJoin(PullRequest, 'pr', 'pr.id = event.prId')
+      .select('event.actorLogin', 'actorLogin')
+      .where('event.type = :type', { type: PrEventType.REVIEW_SUBMITTED })
+      .andWhere('event.actorLogin IS NOT NULL');
+    if (repo) {
+      query.andWhere('pr.repo = :repo', { repo });
+    }
+    const rows = await query.getRawMany<{ actorLogin: string }>();
+    return rows.map((r) => r.actorLogin);
+  }
+
+  static isoWeek(date: Date): string {
+    return format(date, "RRRR-'W'II");
   }
 
   static percentile(values: number[], p: number): number | null {
@@ -34,7 +66,7 @@ export class MetricsService {
     return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
   }
 
-  static buildSummary(allPrs: PullRequest[], now: Date): DashboardSummary {
+  static buildSummary(allPrs: PullRequest[], now: Date, reviewerLogins: string[] = []): DashboardSummary {
     const eligible = allPrs.filter((pr) => !pr.isBot && !pr.isRevert);
 
     const reviewerWaitByRound = MetricsService.roundMetrics(eligible, 'reviewerWaitSeconds', 'Reviewer wait');
@@ -66,7 +98,88 @@ export class MetricsService {
       prCount: eligible.length,
       slaMisses,
       quality: { approvedWithZeroCommentsRate, revertRate },
+      weeklyPhases: MetricsService.weeklyPhases(eligible),
+      stuckNow: MetricsService.stuckNow(allPrs, now),
+      fairness: MetricsService.fairness(reviewerLogins),
+      qualityTrend: MetricsService.qualityTrend(allPrs),
     };
+  }
+
+  static weeklyPhases(prs: PullRequest[]): WeeklyPhasePoint[] {
+    const merged = prs.filter((pr) => pr.state === PrState.MERGED && pr.mergedAt != null);
+    const byWeek = MetricsService.groupBy(merged, (pr) => MetricsService.isoWeek(pr.mergedAt as Date));
+    return [...byWeek.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([week, group]) => ({
+        week,
+        codingSeconds: MetricsService.percentile(MetricsService.pluck(group, 'codingTime'), 0.5) ?? undefined,
+        pickupSeconds: MetricsService.percentile(MetricsService.pluck(group, 'pickupTime'), 0.5) ?? undefined,
+        reworkSeconds: MetricsService.percentile(MetricsService.pluck(group, 'reworkTime'), 0.5) ?? undefined,
+        mergeSeconds: MetricsService.percentile(MetricsService.pluck(group, 'mergeTime'), 0.5) ?? undefined,
+        prCount: group.length,
+      }));
+  }
+
+  static stuckNow(allPrs: PullRequest[], now: Date): StuckPr[] {
+    return allPrs
+      .filter((pr) => pr.state === PrState.OPEN && !pr.isDraft && pr.waitingOn !== WaitingOn.NONE && pr.openedAt != null)
+      .map((pr) => ({
+        repo: pr.repo,
+        number: pr.number,
+        title: pr.title,
+        url: pr.url,
+        authorLogin: pr.authorLogin,
+        waitingOn: pr.waitingOn,
+        waitingSeconds: (now.getTime() - (pr.openedAt as Date).getTime()) / 1000,
+        requestedReviewers: pr.requestedReviewers ?? [],
+        slaBreached: pr.reviewDueAt != null && pr.reviewDueAt < now,
+      }))
+      .sort((a, b) => b.waitingSeconds - a.waitingSeconds)
+      .slice(0, STUCK_LIMIT);
+  }
+
+  static fairness(reviewerLogins: string[]): ReviewerLoad[] {
+    const counts = new Map<string, number>();
+    for (const login of reviewerLogins) {
+      counts.set(login, (counts.get(login) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([login, reviewCount]) => ({ login, reviewCount }))
+      .sort((a, b) => b.reviewCount - a.reviewCount);
+  }
+
+  static qualityTrend(allPrs: PullRequest[]): WeeklyQualityPoint[] {
+    const merged = allPrs.filter((pr) => pr.state === PrState.MERGED && pr.mergedAt != null);
+    const byWeek = MetricsService.groupBy(merged, (pr) => MetricsService.isoWeek(pr.mergedAt as Date));
+    return [...byWeek.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([week, group]) => ({
+        week,
+        approvedWithZeroCommentsRate: MetricsService.ratio(
+          group.filter((pr) => pr.approvedWithZeroComments).length,
+          group.length,
+        ),
+        revertRate: MetricsService.ratio(group.filter((pr) => pr.isRevert).length, group.length),
+        prCount: group.length,
+      }));
+  }
+
+  private static pluck(prs: PullRequest[], field: 'codingTime' | 'pickupTime' | 'reworkTime' | 'mergeTime'): number[] {
+    return prs.map((pr) => pr[field]).filter((v): v is number => v != null);
+  }
+
+  private static groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+    const map = new Map<string, T[]>();
+    for (const item of items) {
+      const k = key(item);
+      const bucket = map.get(k);
+      if (bucket) {
+        bucket.push(item);
+      } else {
+        map.set(k, [item]);
+      }
+    }
+    return map;
   }
 
   private static roundMetrics(

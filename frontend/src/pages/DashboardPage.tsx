@@ -1,13 +1,27 @@
 import { useQuery } from '@apollo/client';
-import { AppBar, Box, Container, Stack, Toolbar, Typography, Alert, CircularProgress } from '@mui/material';
+import { AppBar, Box, Container, Stack, Toolbar, Typography, Alert, CircularProgress, Chip } from '@mui/material';
 import { DASHBOARD_QUERY } from '@/graphql/dashboard';
 import type { DashboardSummary } from '@/types/dashboard';
 import { WaitMetricCard } from '@/components/dashboard/WaitMetricCard';
+import { WeeklyPhaseChart } from '@/components/dashboard/WeeklyPhaseChart';
+import { StuckNowList } from '@/components/dashboard/StuckNowList';
+import { FairnessChart } from '@/components/dashboard/FairnessChart';
+import { QualityTrendChart } from '@/components/dashboard/QualityTrendChart';
+
+function ZoneHeading({ children }: { children: string }) {
+  return (
+    <Typography variant="subtitle1" gutterBottom>
+      {children}
+    </Typography>
+  );
+}
 
 export function DashboardPage() {
   const { data, loading, error } = useQuery<{ dashboard: DashboardSummary }>(DASHBOARD_QUERY, {
     pollInterval: 60000,
   });
+
+  const dashboard = data?.dashboard;
 
   return (
     <Box>
@@ -19,9 +33,19 @@ export function DashboardPage() {
         </Toolbar>
       </AppBar>
       <Container sx={{ py: 4 }}>
-        <Typography variant="h5" gutterBottom>
-          Team dashboard
-        </Typography>
+        <Stack direction="row" alignItems="baseline" spacing={2} sx={{ mb: 2 }}>
+          <Typography variant="h5">Team dashboard</Typography>
+          {dashboard && (
+            <>
+              <Chip size="small" label={`${dashboard.prCount} PRs`} />
+              <Chip
+                size="small"
+                color={dashboard.slaMisses > 0 ? 'warning' : 'default'}
+                label={`${dashboard.slaMisses} SLA misses`}
+              />
+            </>
+          )}
+        </Stack>
 
         {loading && <CircularProgress />}
         {error && (
@@ -30,34 +54,33 @@ export function DashboardPage() {
           </Alert>
         )}
 
-        {data?.dashboard && (
+        {dashboard && (
           <Stack spacing={3}>
             <div>
-              <Typography variant="subtitle1" gutterBottom>
-                Reviewer wait (per round)
-              </Typography>
+              <ZoneHeading>Reviewer wait (per round)</ZoneHeading>
               <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-                {data.dashboard.reviewerWaitByRound.map((m) => (
+                {dashboard.reviewerWaitByRound.map((m) => (
                   <WaitMetricCard key={m.label} metric={m} />
                 ))}
               </Stack>
             </div>
             <div>
-              <Typography variant="subtitle1" gutterBottom>
-                Author wait (per round)
-              </Typography>
+              <ZoneHeading>Author wait (per round)</ZoneHeading>
               <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-                {data.dashboard.authorWaitByRound.map((m) => (
+                {dashboard.authorWaitByRound.map((m) => (
                   <WaitMetricCard key={m.label} metric={m} />
                 ))}
               </Stack>
             </div>
             <div>
-              <Typography variant="subtitle1" gutterBottom>
-                Cycle time
-              </Typography>
-              <WaitMetricCard metric={data.dashboard.cycleTime} />
+              <ZoneHeading>Cycle time</ZoneHeading>
+              <WaitMetricCard metric={dashboard.cycleTime} />
             </div>
+
+            <WeeklyPhaseChart points={dashboard.weeklyPhases} />
+            <StuckNowList items={dashboard.stuckNow} />
+            <FairnessChart loads={dashboard.fairness} />
+            <QualityTrendChart points={dashboard.qualityTrend} />
           </Stack>
         )}
       </Container>

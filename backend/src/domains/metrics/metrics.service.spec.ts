@@ -93,3 +93,100 @@ describe('MetricsService.buildSummary', () => {
     expect(summary.slaMisses).toBe(1);
   });
 });
+
+describe('MetricsService.weeklyPhases', () => {
+  const wk1a = new Date('2026-01-05T00:00:00Z');
+  const wk1b = new Date('2026-01-07T00:00:00Z');
+  const wk2 = new Date('2026-01-14T00:00:00Z');
+
+  it('buckets merged PRs by ISO week and medians each phase', () => {
+    const points = MetricsService.weeklyPhases([
+      pr({ state: PrState.MERGED, mergedAt: wk1a, codingTime: 100, pickupTime: 200, reworkTime: 0, mergeTime: 50 }),
+      pr({ state: PrState.MERGED, mergedAt: wk1b, codingTime: 300, pickupTime: 400, reworkTime: 10, mergeTime: 150 }),
+      pr({ state: PrState.MERGED, mergedAt: wk2, codingTime: 999, pickupTime: 1, reworkTime: 1, mergeTime: 1 }),
+    ]);
+    expect(points).toHaveLength(2);
+    expect(points[0].week).toBe(MetricsService.isoWeek(wk1a));
+    expect(points[0].prCount).toBe(2);
+    expect(points[0].codingSeconds).toBe(200);
+    expect(points[0].pickupSeconds).toBe(300);
+    expect(points[1].week).toBe(MetricsService.isoWeek(wk2));
+    expect(points[1].prCount).toBe(1);
+  });
+
+  it('ignores open PRs', () => {
+    const points = MetricsService.weeklyPhases([pr({ state: PrState.OPEN, mergedAt: undefined })]);
+    expect(points).toHaveLength(0);
+  });
+});
+
+describe('MetricsService.stuckNow', () => {
+  const now = new Date('2026-02-01T00:00:00Z');
+
+  it('lists open non-draft waiting PRs sorted by wait descending', () => {
+    const stuck = MetricsService.stuckNow(
+      [
+        pr({
+          repo: 'o/r',
+          number: 1,
+          title: 'a',
+          url: 'u1',
+          authorLogin: 'alice',
+          state: PrState.OPEN,
+          waitingOn: WaitingOn.REVIEWER,
+          openedAt: new Date('2026-01-31T00:00:00Z'),
+          requestedReviewers: ['bob'],
+          reviewDueAt: new Date('2026-01-31T12:00:00Z'),
+        }),
+        pr({
+          repo: 'o/r',
+          number: 2,
+          title: 'b',
+          url: 'u2',
+          authorLogin: 'carol',
+          state: PrState.OPEN,
+          waitingOn: WaitingOn.AUTHOR,
+          openedAt: new Date('2026-01-20T00:00:00Z'),
+        }),
+        pr({ state: PrState.OPEN, waitingOn: WaitingOn.NONE, openedAt: now }),
+        pr({ state: PrState.OPEN, isDraft: true, waitingOn: WaitingOn.REVIEWER, openedAt: now }),
+        pr({ state: PrState.MERGED, waitingOn: WaitingOn.REVIEWER, openedAt: now }),
+      ],
+      now,
+    );
+    expect(stuck.map((s) => s.number)).toEqual([2, 1]);
+    expect(stuck[1].waitingSeconds).toBe(86400);
+    expect(stuck[1].slaBreached).toBe(true);
+    expect(stuck[1].requestedReviewers).toEqual(['bob']);
+    expect(stuck[0].slaBreached).toBe(false);
+  });
+});
+
+describe('MetricsService.fairness', () => {
+  it('counts reviews per login sorted descending', () => {
+    expect(MetricsService.fairness(['bob', 'alice', 'bob', 'bob', 'alice'])).toEqual([
+      { login: 'bob', reviewCount: 3 },
+      { login: 'alice', reviewCount: 2 },
+    ]);
+  });
+
+  it('returns empty for no reviews', () => {
+    expect(MetricsService.fairness([])).toEqual([]);
+  });
+});
+
+describe('MetricsService.qualityTrend', () => {
+  const wk1 = new Date('2026-01-05T00:00:00Z');
+
+  it('computes per-week revert and zero-comment rates over merged PRs', () => {
+    const trend = MetricsService.qualityTrend([
+      pr({ state: PrState.MERGED, mergedAt: wk1, isRevert: true }),
+      pr({ state: PrState.MERGED, mergedAt: wk1, approvedWithZeroComments: true }),
+      pr({ state: PrState.OPEN, mergedAt: undefined }),
+    ]);
+    expect(trend).toHaveLength(1);
+    expect(trend[0].prCount).toBe(2);
+    expect(trend[0].revertRate).toBeCloseTo(0.5);
+    expect(trend[0].approvedWithZeroCommentsRate).toBeCloseTo(0.5);
+  });
+});
