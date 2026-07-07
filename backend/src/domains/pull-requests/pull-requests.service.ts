@@ -30,6 +30,23 @@ export class PullRequestsService {
     });
   }
 
+  private botReviewers(): Set<string> {
+    return new Set(
+      (this.configService.get<string>('GITHUB_BOT_REVIEWERS') ?? 'github-code-quality,claude')
+        .split(',')
+        .map((r) => r.trim().toLowerCase())
+        .filter(Boolean),
+    );
+  }
+
+  async recomputeAll(): Promise<number> {
+    const prs = await this.prRepo.find({ select: { id: true } });
+    for (const pr of prs) {
+      await this.recomputeFromEvents(pr.id);
+    }
+    return prs.length;
+  }
+
   async recomputeFromEvents(prId: string): Promise<PullRequest | null> {
     const pr = await this.prRepo.findOne({ where: { id: prId } });
     if (!pr) {
@@ -42,7 +59,7 @@ export class PullRequestsService {
     });
 
     const slaMinutes = Number(this.configService.get('DEFAULT_REVIEW_SLA_MINUTES') ?? 120);
-    const computed = this.phaseComputer.compute(events, slaMinutes);
+    const computed = this.phaseComputer.compute(events, slaMinutes, this.botReviewers());
 
     const state = computed.mergedAt ? PrState.MERGED : computed.closedAt ? PrState.CLOSED : PrState.OPEN;
 

@@ -43,10 +43,12 @@ type ReviewState = 'approved' | 'changes_requested' | 'commented';
 
 const seconds = (from: Date, to: Date): number => (to.getTime() - from.getTime()) / 1000;
 const nonNegative = (value: number): number => (value < 0 ? 0 : value);
+const isBotReviewer = (login: string | undefined, botReviewers: Set<string>): boolean =>
+  !!login && (login.endsWith('[bot]') || botReviewers.has(login.toLowerCase()));
 
 @Injectable()
 export class PhaseComputer {
-  compute(events: PrEvent[], defaultSlaMinutes: number): ComputedPhases {
+  compute(events: PrEvent[], defaultSlaMinutes: number, botReviewers: Set<string> = new Set()): ComputedPhases {
     const ordered = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
 
     const openedAt = this.firstTime(ordered, PrEventType.PR_OPENED);
@@ -56,7 +58,7 @@ export class PhaseComputer {
     const mergedAt = this.firstTime(ordered, PrEventType.PR_MERGED);
     const closedAt = this.firstTime(ordered, PrEventType.PR_CLOSED);
 
-    const firstCountedReview = this.firstCountedReview(ordered, readyTransitions);
+    const firstCountedReview = this.firstCountedReview(ordered, readyTransitions, botReviewers);
     const readyAt = this.readyAtForPickup(readyTransitions, firstCountedReview?.occurredAt);
     const firstReviewAt = firstCountedReview?.occurredAt;
 
@@ -119,20 +121,20 @@ export class PhaseComputer {
     };
   }
 
-  computeWaitRounds(events: PrEvent[]): WaitRound[] {
+  computeWaitRounds(events: PrEvent[], botReviewers: Set<string> = new Set()): WaitRound[] {
     const ordered = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
     const openedAt = this.firstTime(ordered, PrEventType.PR_OPENED);
     const readyTransitions = this.readyTransitions(ordered, openedAt, this.openedAsDraft(ordered));
-    const firstCountedReview = this.firstCountedReview(ordered, readyTransitions);
+    const firstCountedReview = this.firstCountedReview(ordered, readyTransitions, botReviewers);
     const readyAt = this.readyAtForPickup(readyTransitions, firstCountedReview?.occurredAt);
     return this.walkWaitRounds(ordered, readyAt);
   }
 
-  computeWaitingOn(events: PrEvent[]): WaitingOn {
+  computeWaitingOn(events: PrEvent[], botReviewers: Set<string> = new Set()): WaitingOn {
     const ordered = [...events].sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
     const openedAt = this.firstTime(ordered, PrEventType.PR_OPENED);
     const readyTransitions = this.readyTransitions(ordered, openedAt, this.openedAsDraft(ordered));
-    const firstCountedReview = this.firstCountedReview(ordered, readyTransitions);
+    const firstCountedReview = this.firstCountedReview(ordered, readyTransitions, botReviewers);
     const readyAt = this.readyAtForPickup(readyTransitions, firstCountedReview?.occurredAt);
     const mergedAt = this.firstTime(ordered, PrEventType.PR_MERGED);
     const closedAt = this.firstTime(ordered, PrEventType.PR_CLOSED);
@@ -165,9 +167,16 @@ export class PhaseComputer {
     return readyTransitions.some((t) => t.getTime() <= at.getTime());
   }
 
-  private firstCountedReview(events: PrEvent[], readyTransitions: Date[]): PrEvent | undefined {
+  private firstCountedReview(
+    events: PrEvent[],
+    readyTransitions: Date[],
+    botReviewers: Set<string>,
+  ): PrEvent | undefined {
     return events.find(
-      (e) => e.type === PrEventType.REVIEW_SUBMITTED && this.isReadyAt(readyTransitions, e.occurredAt),
+      (e) =>
+        e.type === PrEventType.REVIEW_SUBMITTED &&
+        this.isReadyAt(readyTransitions, e.occurredAt) &&
+        !isBotReviewer(e.actorLogin, botReviewers),
     );
   }
 

@@ -49,6 +49,29 @@ describe('PhaseComputer', () => {
     expect(result.waitRounds[0].reviewerWaitSeconds).toBe(7200);
   });
 
+  it('skips bot reviews when picking the first review (pickup = first human review)', () => {
+    const events = [
+      ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
+      ev(PrEventType.REVIEW_SUBMITTED, h(0.05), { state: 'commented' }, 'github-code-quality'),
+      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'commented' }, 'dependabot[bot]'),
+      ev(PrEventType.REVIEW_SUBMITTED, h(3), { state: 'approved' }, 'reviewer'),
+    ];
+    const bots = new Set(['github-code-quality']);
+    const result = computer.compute(events, SLA, bots);
+    expect(result.firstReviewAt).toEqual(h(3));
+    expect(result.pickupTime).toBe(3 * 3600);
+  });
+
+  it('counts a bot review when it is not in the bot roster', () => {
+    const events = [
+      ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
+      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'commented' }, 'claude'),
+      ev(PrEventType.REVIEW_SUBMITTED, h(3), { state: 'approved' }, 'reviewer'),
+    ];
+    const result = computer.compute(events, SLA, new Set());
+    expect(result.pickupTime).toBe(3600);
+  });
+
   it('splits Rework into per-round Reviewer Wait and Author Wait', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
