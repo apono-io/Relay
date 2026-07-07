@@ -162,5 +162,17 @@ describe('GithubEventNormalizer', () => {
       const bId = backfill.events.find((e) => e.type === PrEventType.PR_READY_FOR_REVIEW)!.externalId;
       expect(webhook[0].externalId).toBe(bId);
     });
+
+    it('a replayed webhook delivery yields identical external ids', () => {
+      const delivery = {
+        action: 'submitted',
+        repository: { full_name: REPO },
+        pull_request: { number: 42, node_id: PR_NODE },
+        review: { node_id: 'PRR_9', state: 'approved', submitted_at: READY_AT, user: { login: 'bob' } },
+      };
+      const first = normalizer.normalizeWebhook('pull_request_review', delivery);
+      const replay = normalizer.normalizeWebhook('pull_request_review', delivery);
+      expect(replay.map((e) => e.externalId)).toEqual(first.map((e) => e.externalId));
+    });
   });
 });
