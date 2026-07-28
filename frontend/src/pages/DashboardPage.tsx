@@ -1,89 +1,73 @@
 import { useQuery } from '@apollo/client';
-import { AppBar, Box, Container, Stack, Toolbar, Typography, Alert, CircularProgress, Chip } from '@mui/material';
+import { Stack, Typography, Alert, Skeleton, Card } from '@mui/material';
 import { DASHBOARD_QUERY } from '@/graphql/dashboard';
 import type { DashboardSummary } from '@/types/dashboard';
-import { WaitMetricCard } from '@/components/dashboard/WaitMetricCard';
-import { WeeklyPhaseChart } from '@/components/dashboard/WeeklyPhaseChart';
-import { StuckNowList } from '@/components/dashboard/StuckNowList';
-import { FairnessChart } from '@/components/dashboard/FairnessChart';
-import { QualityTrendChart } from '@/components/dashboard/QualityTrendChart';
+import { AppShell, VIEW_TITLES } from '@/components/layout/AppShell';
+import { StatusStrip } from '@/components/dashboard/StatusStrip';
+import { LiveView } from '@/components/dashboard/LiveView';
+import { TrendsView } from '@/components/dashboard/TrendsView';
+import { MyPrsView } from '@/components/personal/MyPrsView';
+import { MyReviewsView } from '@/components/personal/MyReviewsView';
 
-function ZoneHeading({ children }: { children: string }) {
+type View = 'dashboard' | 'analytics' | 'my-prs' | 'my-reviews';
+
+function LoadingState() {
   return (
-    <Typography variant="subtitle1" gutterBottom>
-      {children}
-    </Typography>
+    <Stack spacing={3}>
+      <Skeleton variant="rounded" height={56} />
+      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} variant="rounded" height={120} sx={{ flex: '1 1 210px' }} />
+        ))}
+      </Stack>
+      <Skeleton variant="rounded" height={320} />
+    </Stack>
   );
 }
 
-export function DashboardPage() {
-  const { data, loading, error } = useQuery<{ dashboard: DashboardSummary }>(DASHBOARD_QUERY, {
-    pollInterval: 60000,
-  });
+function PersonalView({ view }: { view: 'my-prs' | 'my-reviews' }) {
+  return view === 'my-prs' ? <MyPrsView /> : <MyReviewsView />;
+}
 
+export function DashboardPage({ view }: { view: View }) {
+  const isPersonal = view === 'my-prs' || view === 'my-reviews';
+  const { data, loading, error } = useQuery<{ dashboard: DashboardSummary }>(DASHBOARD_QUERY, {
+    pollInterval: 15000,
+    skip: isPersonal,
+  });
   const dashboard = data?.dashboard;
 
   return (
-    <Box>
-      <AppBar position="static" color="default" elevation={0}>
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            Relay
-          </Typography>
-        </Toolbar>
-      </AppBar>
-      <Container sx={{ py: 4 }}>
-        <Stack direction="row" alignItems="baseline" spacing={2} sx={{ mb: 2 }}>
-          <Typography variant="h5">Team dashboard</Typography>
-          {dashboard && (
-            <>
-              <Chip size="small" label={`${dashboard.prCount} PRs`} />
-              <Chip
-                size="small"
-                color={dashboard.slaMisses > 0 ? 'warning' : 'default'}
-                label={`${dashboard.slaMisses} SLA misses`}
-              />
-            </>
-          )}
+    <AppShell view={view}>
+      {isPersonal ? (
+        <Stack spacing={{ xs: 3, md: 4 }}>
+          <StatusStrip title={VIEW_TITLES[view]} />
+          <PersonalView view={view} />
         </Stack>
+      ) : (
+        <>
+          {loading && <LoadingState />}
 
-        {loading && <CircularProgress />}
-        {error && (
-          <Alert severity="info">
-            Dashboard data is not available yet. Implement the metrics aggregation (spec task 11) and run backfill.
-          </Alert>
-        )}
+          {error && (
+            <Alert severity="info">Dashboard data is not available yet. Run the backfill and reload.</Alert>
+          )}
 
-        {dashboard && (
-          <Stack spacing={3}>
-            <div>
-              <ZoneHeading>Reviewer wait (per round)</ZoneHeading>
-              <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-                {dashboard.reviewerWaitByRound.map((m) => (
-                  <WaitMetricCard key={m.label} metric={m} />
-                ))}
-              </Stack>
-            </div>
-            <div>
-              <ZoneHeading>Author wait (per round)</ZoneHeading>
-              <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-                {dashboard.authorWaitByRound.map((m) => (
-                  <WaitMetricCard key={m.label} metric={m} />
-                ))}
-              </Stack>
-            </div>
-            <div>
-              <ZoneHeading>Cycle time</ZoneHeading>
-              <WaitMetricCard metric={dashboard.cycleTime} />
-            </div>
+          {dashboard && (
+            <Stack spacing={{ xs: 3, md: 4 }}>
+              <StatusStrip title={VIEW_TITLES[view]} />
+              {view === 'dashboard' ? <LiveView summary={dashboard} /> : <TrendsView summary={dashboard} />}
+            </Stack>
+          )}
 
-            <WeeklyPhaseChart points={dashboard.weeklyPhases} />
-            <StuckNowList items={dashboard.stuckNow} />
-            <FairnessChart loads={dashboard.fairness} />
-            <QualityTrendChart points={dashboard.qualityTrend} />
-          </Stack>
-        )}
-      </Container>
-    </Box>
+          {!loading && !error && !dashboard && (
+            <Card sx={{ p: 4, textAlign: 'center' }}>
+              <Typography color="text.secondary">
+                No data yet — run the backfill to populate the dashboard.
+              </Typography>
+            </Card>
+          )}
+        </>
+      )}
+    </AppShell>
   );
 }

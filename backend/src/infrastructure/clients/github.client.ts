@@ -6,57 +6,61 @@ import { LoggerService } from '../logging/logger.service';
 
 type AuthMode = 'pat' | 'app';
 
+const PR_NODE_FRAGMENT = `
+fragment PrTimelineNode on PullRequest {
+  id
+  number
+  title
+  url
+  isDraft
+  createdAt
+  updatedAt
+  mergedAt
+  closedAt
+  author { login __typename }
+  mergedBy { login }
+  commits(last: 100) {
+    nodes {
+      commit {
+        oid
+        authoredDate
+        committedDate
+        pushedDate
+        author { user { login } }
+        statusCheckRollup { state }
+      }
+    }
+  }
+  reviews(first: 100) {
+    nodes { id state submittedAt author { login } }
+  }
+  comments(first: 100) {
+    nodes { id createdAt author { login } }
+  }
+  timelineItems(
+    first: 100
+    itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]
+  ) {
+    nodes {
+      __typename
+      ... on ReadyForReviewEvent { createdAt actor { login } }
+      ... on ConvertToDraftEvent { createdAt actor { login } }
+      ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
+      ... on ReviewRequestRemovedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
+    }
+  }
+}`;
+
 const PR_TIMELINE_QUERY = `
 query PullRequestTimelines($owner: String!, $name: String!, $first: Int!, $after: String, $orderField: IssueOrderField!) {
   repository(owner: $owner, name: $name) {
     pullRequests(first: $first, after: $after, orderBy: { field: $orderField, direction: DESC }) {
       pageInfo { hasNextPage endCursor }
-      nodes {
-        id
-        number
-        title
-        url
-        isDraft
-        createdAt
-        updatedAt
-        mergedAt
-        closedAt
-        author { login __typename }
-        mergedBy { login }
-        commits(last: 100) {
-          nodes {
-            commit {
-              oid
-              authoredDate
-              committedDate
-              pushedDate
-              author { user { login } }
-              statusCheckRollup { state }
-            }
-          }
-        }
-        reviews(first: 100) {
-          nodes { id state submittedAt author { login } }
-        }
-        comments(first: 100) {
-          nodes { id createdAt author { login } }
-        }
-        timelineItems(
-          first: 100
-          itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT, REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]
-        ) {
-          nodes {
-            __typename
-            ... on ReadyForReviewEvent { createdAt actor { login } }
-            ... on ConvertToDraftEvent { createdAt actor { login } }
-            ... on ReviewRequestedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
-            ... on ReviewRequestRemovedEvent { createdAt actor { login } requestedReviewer { ... on User { login } } }
-          }
-        }
-      }
+      nodes { ...PrTimelineNode }
     }
   }
-}`;
+}
+${PR_NODE_FRAGMENT}`;
 
 @Injectable()
 export class GitHubClient {
@@ -72,11 +76,15 @@ export class GitHubClient {
     private readonly configService: ConfigService,
     private readonly loggerService: LoggerService,
   ) {
-    this.authMode = (this.configService.get<string>('GITHUB_AUTH_MODE') as AuthMode) || 'pat';
+    this.authMode =
+      (this.configService.get<string>('GITHUB_AUTH_MODE') as AuthMode) || 'pat';
     this.pat = this.configService.get<string>('GITHUB_PAT') || '';
     this.appId = this.configService.get<string>('GITHUB_APP_ID') || '';
-    this.installationId = this.configService.get<string>('GITHUB_APP_INSTALLATION_ID') || '';
-    this.privateKey = (this.configService.get<string>('GITHUB_APP_PRIVATE_KEY') || '').replace(/\\n/g, '\n');
+    this.installationId =
+      this.configService.get<string>('GITHUB_APP_INSTALLATION_ID') || '';
+    this.privateKey = (
+      this.configService.get<string>('GITHUB_APP_PRIVATE_KEY') || ''
+    ).replace(/\\n/g, '\n');
   }
 
   isConfigured(): boolean {
@@ -88,21 +96,64 @@ export class GitHubClient {
 
   async fetchPullRequestTimelines(
     repo: string,
-    opts: { first?: number; after?: string | null; orderBy?: 'CREATED_AT' | 'UPDATED_AT' } = {},
-  ): Promise<{ nodes: any[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } }> {
+    opts: {
+      first?: number;
+      after?: string | null;
+      orderBy?: 'CREATED_AT' | 'UPDATED_AT';
+    } = {},
+  ): Promise<{
+    nodes: any[];
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  }> {
     const [owner, name] = repo.split('/');
-    const data = await this.graphql<{ repository: { pullRequests: any } }>(PR_TIMELINE_QUERY, {
-      owner,
-      name,
-      first: opts.first ?? 25,
-      after: opts.after ?? null,
-      orderField: opts.orderBy ?? 'CREATED_AT',
-    });
+    const data = await this.graphql<{ repository: { pullRequests: any } }>(
+      PR_TIMELINE_QUERY,
+      {
+        owner,
+        name,
+        first: opts.first ?? 25,
+        after: opts.after ?? null,
+        orderField: opts.orderBy ?? 'CREATED_AT',
+      },
+    );
     const connection = data.repository.pullRequests;
     return { nodes: connection.nodes, pageInfo: connection.pageInfo };
   }
 
-  async graphql<T = any>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+  async fetchPullRequestTimelinesByNumbers(
+    repo: string,
+    numbers: number[],
+  ): Promise<any[]> {
+    if (numbers.length === 0) {
+      return [];
+    }
+    const [owner, name] = repo.split('/');
+    const aliases = numbers
+      .map(
+        (number, index) =>
+          `pr${index}: pullRequest(number: ${number}) { ...PrTimelineNode }`,
+      )
+      .join('\n    ');
+    const query = `
+query PullRequestsByNumber($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    ${aliases}
+  }
+}
+${PR_NODE_FRAGMENT}`;
+    const data = await this.graphql<{ repository: Record<string, any> }>(
+      query,
+      { owner, name },
+    );
+    return numbers
+      .map((_, index) => data.repository[`pr${index}`])
+      .filter((node) => node != null);
+  }
+
+  async graphql<T = any>(
+    query: string,
+    variables: Record<string, unknown> = {},
+  ): Promise<T> {
     const token = await this.getToken();
     const response = await axios.post(
       'https://api.github.com/graphql',
@@ -116,12 +167,18 @@ export class GitHubClient {
       },
     );
     if (response.data.errors) {
-      throw new Error(`GitHub GraphQL error: ${JSON.stringify(response.data.errors)}`);
+      throw new Error(
+        `GitHub GraphQL error: ${JSON.stringify(response.data.errors)}`,
+      );
     }
     return response.data.data as T;
   }
 
-  async rest<T = any>(method: 'get' | 'post', path: string, body?: unknown): Promise<T> {
+  async rest<T = any>(
+    method: 'get' | 'post',
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const token = await this.getToken();
     const response = await axios.request<T>({
       method,

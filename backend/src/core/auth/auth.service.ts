@@ -1,8 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AuthenticatedUser } from './models/auth-user.model';
+import { PeopleService } from '@/domains/people/people.service';
+import { Role } from '@/core/rbac/permissions.constants';
 
-type GoogleProfile = {
+export type OAuthProfile = {
   email: string;
   name?: string;
   picture?: string;
@@ -10,14 +13,46 @@ type GoogleProfile = {
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly jwtService: JwtService) {}
+  private readonly bootstrapAdminEmails: Set<string>;
 
-  issueToken(profile: GoogleProfile): string {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly peopleService: PeopleService,
+    private readonly configService: ConfigService,
+  ) {
+    this.bootstrapAdminEmails = new Set(
+      (this.configService.get<string>('ADMIN_EMAILS') ?? '')
+        .split(',')
+        .map((email) => email.trim().toLowerCase())
+        .filter((email) => email.length > 0),
+    );
+  }
+
+  async issueToken(profile: OAuthProfile): Promise<string> {
+    let person = await this.peopleService.ensurePerson(
+      profile.email,
+      profile.name,
+    );
+    if (
+      this.bootstrapAdminEmails.has(person.email.toLowerCase()) &&
+      (person.role !== Role.ADMIN || !person.active)
+    ) {
+      person = (await this.peopleService.update(person.id, {
+        role: Role.ADMIN,
+        active: true,
+      }))!;
+    }
+
+    if (!person.active) {
+      throw new ForbiddenException('This account is deactivated');
+    }
+
     const payload = {
-      sub: profile.email,
-      email: profile.email,
-      name: profile.name,
+      sub: person.id,
+      email: person.email,
+      name: profile.name ?? person.displayName,
       picture: profile.picture,
+      role: person.role,
     };
     return this.jwtService.sign(payload);
   }

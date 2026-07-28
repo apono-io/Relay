@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthenticatedUser } from '../models/auth-user.model';
+import { DEFAULT_ROLE } from '@/core/rbac/permissions.constants';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -19,12 +20,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     email: string;
     name?: string;
     picture?: string;
+    role?: string;
   }): Promise<AuthenticatedUser> {
     return {
       id: payload.sub,
       email: payload.email,
       name: payload.name,
       picture: payload.picture,
+      role: payload.role ?? DEFAULT_ROLE,
     };
   }
 }

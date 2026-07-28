@@ -10,7 +10,8 @@ import { WaitingOn, PrState } from './pr-enums';
 @Injectable()
 export class PullRequestsService {
   constructor(
-    @InjectRepository(PullRequest) private readonly prRepo: Repository<PullRequest>,
+    @InjectRepository(PullRequest)
+    private readonly prRepo: Repository<PullRequest>,
     @InjectRepository(PrEvent) private readonly eventRepo: Repository<PrEvent>,
     private readonly phaseComputer: PhaseComputer,
     private readonly configService: ConfigService,
@@ -25,14 +26,79 @@ export class PullRequestsService {
 
   findStuck(): Promise<PullRequest[]> {
     return this.prRepo.find({
-      where: [{ waitingOn: WaitingOn.REVIEWER }, { waitingOn: WaitingOn.AUTHOR }],
+      where: [
+        { waitingOn: WaitingOn.REVIEWER },
+        { waitingOn: WaitingOn.AUTHOR },
+      ],
       order: { reviewDueAt: 'ASC' },
     });
   }
 
+  findOpenAuthoredBy(logins: string[]): Promise<PullRequest[]> {
+    if (logins.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prRepo
+      .createQueryBuilder('pr')
+      .where('pr.state = :state', { state: PrState.OPEN })
+      .andWhere('LOWER(pr."authorLogin") = ANY(:logins)', {
+        logins: lowered(logins),
+      })
+      .orderBy('pr."openedAt"', 'DESC', 'NULLS LAST')
+      .getMany();
+  }
+
+  findRecentlyMergedBy(logins: string[], since: Date): Promise<PullRequest[]> {
+    if (logins.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prRepo
+      .createQueryBuilder('pr')
+      .where('pr.state = :state', { state: PrState.MERGED })
+      .andWhere('pr."mergedAt" >= :since', { since })
+      .andWhere('LOWER(pr."authorLogin") = ANY(:logins)', {
+        logins: lowered(logins),
+      })
+      .orderBy('pr."mergedAt"', 'DESC')
+      .getMany();
+  }
+
+  async findOpenNumbersUpdatedBefore(
+    repo: string,
+    cutoff: Date,
+  ): Promise<number[]> {
+    const rows = await this.prRepo
+      .createQueryBuilder('pr')
+      .select('pr.number', 'number')
+      .where('pr.repo = :repo', { repo })
+      .andWhere('pr.state = :state', { state: PrState.OPEN })
+      .andWhere('pr."updatedAt" < :cutoff', { cutoff })
+      .getRawMany<{ number: number }>();
+    return rows.map((row) => Number(row.number));
+  }
+
+  findAwaitingReviewBy(logins: string[]): Promise<PullRequest[]> {
+    if (logins.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prRepo
+      .createQueryBuilder('pr')
+      .where('pr.state = :state', { state: PrState.OPEN })
+      .andWhere('pr."isDraft" = false')
+      .andWhere(
+        'EXISTS (SELECT 1 FROM unnest(pr."requestedReviewers") reviewer WHERE LOWER(reviewer) = ANY(:logins))',
+        { logins: lowered(logins) },
+      )
+      .orderBy('pr."openedAt"', 'ASC', 'NULLS LAST')
+      .getMany();
+  }
+
   private botReviewers(): Set<string> {
     return new Set(
-      (this.configService.get<string>('GITHUB_BOT_REVIEWERS') ?? 'github-code-quality,claude')
+      (
+        this.configService.get<string>('GITHUB_BOT_REVIEWERS') ??
+        'github-code-quality,claude'
+      )
         .split(',')
         .map((r) => r.trim().toLowerCase())
         .filter(Boolean),
@@ -58,10 +124,20 @@ export class PullRequestsService {
       order: { occurredAt: 'ASC' },
     });
 
-    const slaMinutes = Number(this.configService.get('DEFAULT_REVIEW_SLA_MINUTES') ?? 120);
-    const computed = this.phaseComputer.compute(events, slaMinutes, this.botReviewers());
+    const slaMinutes = Number(
+      this.configService.get('DEFAULT_REVIEW_SLA_MINUTES') ?? 120,
+    );
+    const computed = this.phaseComputer.compute(
+      events,
+      slaMinutes,
+      this.botReviewers(),
+    );
 
-    const state = computed.mergedAt ? PrState.MERGED : computed.closedAt ? PrState.CLOSED : PrState.OPEN;
+    const state = computed.mergedAt
+      ? PrState.MERGED
+      : computed.closedAt
+        ? PrState.CLOSED
+        : PrState.OPEN;
 
     Object.assign(pr, {
       state,
@@ -93,4 +169,8 @@ export class PullRequestsService {
 
     return this.prRepo.save(pr);
   }
+}
+
+function lowered(logins: string[]): string[] {
+  return logins.map((login) => login.toLowerCase());
 }

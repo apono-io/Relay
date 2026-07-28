@@ -1,4 +1,10 @@
-import { ObjectType, Field, Float, Int } from '@nestjs/graphql';
+import {
+  ObjectType,
+  Field,
+  Float,
+  GraphQLISODateTime,
+  Int,
+} from '@nestjs/graphql';
 
 @ObjectType('WaitMetric')
 export class WaitMetric {
@@ -73,6 +79,24 @@ export class StuckPr {
 
   @Field()
   slaBreached: boolean;
+
+  @Field(() => Int)
+  roundNumber: number;
+
+  @Field(() => Float, { nullable: true })
+  dueInSeconds: number | null;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  openedAt: Date | null;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  readyAt: Date | null;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  firstReviewAt: Date | null;
+
+  @Field(() => GraphQLISODateTime, { nullable: true })
+  approvedAt: Date | null;
 }
 
 @ObjectType('ReviewerLoad')
@@ -116,6 +140,12 @@ export class DashboardSummary {
   @Field(() => Int)
   slaMisses: number;
 
+  @Field(() => Float)
+  slaMissRate: number;
+
+  @Field(() => Int)
+  waitingCount: number;
+
   @Field(() => QualityGuardrail)
   quality: QualityGuardrail;
 
@@ -130,4 +160,7 @@ export class DashboardSummary {
 
   @Field(() => [WeeklyQualityPoint])
   qualityTrend: WeeklyQualityPoint[];
+
+  @Field(() => Date, { nullable: true })
+  lastSyncedAt: Date | null;
 }

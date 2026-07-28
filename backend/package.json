@@ -13,6 +13,7 @@
     "backfill": "node -r ts-node/register -r tsconfig-paths/register src/backfill.cli.ts",
     "gap-fill": "node -r ts-node/register -r tsconfig-paths/register src/gap-fill.cli.ts",
     "recompute": "node -r ts-node/register -r tsconfig-paths/register src/recompute.cli.ts",
+    "seed-people": "node -r ts-node/register -r tsconfig-paths/register src/seed-people.cli.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

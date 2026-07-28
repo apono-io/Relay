@@ -13,6 +13,12 @@ export class AuthUser {
 
   @Field({ nullable: true })
   picture?: string;
+
+  @Field()
+  role: string;
+
+  @Field(() => [String])
+  permissions: string[];
 }
 
 export type AuthenticatedUser = {
@@ -20,4 +26,5 @@ export type AuthenticatedUser = {
   email: string;
   name?: string;
   picture?: string;
+  role: string;
 };

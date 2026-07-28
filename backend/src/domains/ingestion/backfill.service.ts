@@ -28,9 +28,15 @@ export class BackfillService {
     const maxPrs = Number(this.configService.get('BACKFILL_MAX_PRS') ?? 0);
     const cutoff = subQuarters(new Date(), quarters);
 
-    this.logger.log(`Backfill: ${repos.length} repo(s), since ${cutoff.toISOString()}${maxPrs ? `, max ${maxPrs} PRs/repo` : ''}`);
+    this.logger.log(
+      `Backfill: ${repos.length} repo(s), since ${cutoff.toISOString()}${maxPrs ? `, max ${maxPrs} PRs/repo` : ''}`,
+    );
 
-    const summary: BackfillSummary = { reposProcessed: 0, prsProcessed: 0, eventsInserted: 0 };
+    const summary: BackfillSummary = {
+      reposProcessed: 0,
+      prsProcessed: 0,
+      eventsInserted: 0,
+    };
 
     for (const repo of repos) {
       const perRepo = await this.backfillRepo(repo, cutoff, maxPrs);
@@ -53,7 +59,10 @@ export class BackfillService {
     let eventsInserted = 0;
 
     while (true) {
-      const page = await this.github.fetchPullRequestTimelines(repo, { first: 25, after });
+      const page = await this.github.fetchPullRequestTimelines(repo, {
+        first: 25,
+        after,
+      });
       let reachedCutoff = false;
 
       for (const node of page.nodes) {
@@ -61,7 +70,10 @@ export class BackfillService {
           reachedCutoff = true;
           break;
         }
-        const { pullRequest, events } = this.normalizer.normalizeBackfillNode(repo, node);
+        const { pullRequest, events } = this.normalizer.normalizeBackfillNode(
+          repo,
+          node,
+        );
         eventsInserted += await this.ingest.persistPr(pullRequest, events);
         prsProcessed += 1;
         if (maxPrs && prsProcessed >= maxPrs) {

@@ -1,60 +1,110 @@
-import { Injectable } from '@nestjs/common';
-import { Interval } from '@nestjs/schedule';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { subHours } from 'date-fns';
 import { LoggerService } from '@/infrastructure/logging/logger.service';
 import { GitHubClient } from '@/infrastructure/clients/github.client';
+import { SyncStatusService } from '@/infrastructure/sync/sync-status.service';
 import { GithubEventNormalizer } from '@/domains/ingestion/github-event-normalizer.service';
 import { PrIngestService } from '@/domains/ingestion/pr-ingest.service';
 import { PrEventSource } from '@/domains/pull-requests/pr-enums';
+import { PullRequestsService } from '@/domains/pull-requests/pull-requests.service';
 
 export type GapFillSummary = {
   reposProcessed: number;
   prsScanned: number;
+  prsReconciled: number;
   eventsInserted: number;
 };
 
+const RECONCILE_BATCH_SIZE = 20;
+
 @Injectable()
-export class GapFillJob {
+export class GapFillJob implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     private readonly github: GitHubClient,
     private readonly normalizer: GithubEventNormalizer,
     private readonly ingest: PrIngestService,
+    private readonly pullRequests: PullRequestsService,
     private readonly logger: LoggerService,
+    private readonly syncStatus: SyncStatusService,
+    private readonly schedulerRegistry: SchedulerRegistry,
   ) {}
 
-  @Interval('gap-fill', 10 * 60 * 1000)
+  onModuleInit(): void {
+    const minutes = Number(
+      this.configService.get('GAP_FILL_INTERVAL_MINUTES') ?? 10,
+    );
+    const handle = setInterval(() => void this.run(), minutes * 60 * 1000);
+    this.schedulerRegistry.addInterval('gap-fill', handle);
+    void this.run();
+  }
+
   async run(): Promise<void> {
     if (!this.github.isConfigured()) {
       return;
     }
-    const summary = await this.pull();
-    this.logger.log(`Gap-fill done: ${JSON.stringify(summary)}`);
+    try {
+      const summary = await this.pull();
+      this.logger.log(`Gap-fill done: ${JSON.stringify(summary)}`);
+    } catch (error) {
+      this.logger.error(
+        `Gap-fill failed: ${(error as Error).message}`,
+        (error as Error).stack,
+        GapFillJob.name,
+      );
+    }
+  }
+
+  async runNow(): Promise<Date | null> {
+    if (this.github.isConfigured()) {
+      const summary = await this.pull();
+      this.logger.log(`Manual sync done: ${JSON.stringify(summary)}`);
+    }
+    return this.syncStatus.lastSyncedAt;
   }
 
   async pull(now: Date = new Date()): Promise<GapFillSummary> {
-    const lookbackHours = Number(this.configService.get('GAP_FILL_LOOKBACK_HOURS') ?? 24);
+    const lookbackHours = Number(
+      this.configService.get('GAP_FILL_LOOKBACK_HOURS') ?? 24,
+    );
     const cutoff = subHours(now, lookbackHours);
     const repos = this.ingest.repos();
 
-    const summary: GapFillSummary = { reposProcessed: 0, prsScanned: 0, eventsInserted: 0 };
+    const summary: GapFillSummary = {
+      reposProcessed: 0,
+      prsScanned: 0,
+      prsReconciled: 0,
+      eventsInserted: 0,
+    };
     for (const repo of repos) {
       const perRepo = await this.pullRepo(repo, cutoff);
+      const reconcile = await this.reconcileRepo(repo, cutoff);
       summary.reposProcessed += 1;
       summary.prsScanned += perRepo.prsScanned;
-      summary.eventsInserted += perRepo.eventsInserted;
+      summary.prsReconciled += reconcile.prsReconciled;
+      summary.eventsInserted +=
+        perRepo.eventsInserted + reconcile.eventsInserted;
     }
+    this.syncStatus.markSynced(now);
     return summary;
   }
 
-  private async pullRepo(repo: string, cutoff: Date): Promise<{ prsScanned: number; eventsInserted: number }> {
+  private async pullRepo(
+    repo: string,
+    cutoff: Date,
+  ): Promise<{ prsScanned: number; eventsInserted: number }> {
     let after: string | null = null;
     let prsScanned = 0;
     let eventsInserted = 0;
 
     while (true) {
-      const page = await this.github.fetchPullRequestTimelines(repo, { first: 25, after, orderBy: 'UPDATED_AT' });
+      const page = await this.github.fetchPullRequestTimelines(repo, {
+        first: 25,
+        after,
+        orderBy: 'UPDATED_AT',
+      });
       let reachedCutoff = false;
 
       for (const node of page.nodes) {
@@ -62,8 +112,15 @@ export class GapFillJob {
           reachedCutoff = true;
           break;
         }
-        const { pullRequest, events } = this.normalizer.normalizeBackfillNode(repo, node);
-        eventsInserted += await this.ingest.persistPr(pullRequest, events, PrEventSource.GAP_FILL);
+        const { pullRequest, events } = this.normalizer.normalizeBackfillNode(
+          repo,
+          node,
+        );
+        eventsInserted += await this.ingest.persistPr(
+          pullRequest,
+          events,
+          PrEventSource.GAP_FILL,
+        );
         prsScanned += 1;
       }
 
@@ -74,5 +131,39 @@ export class GapFillJob {
     }
 
     return { prsScanned, eventsInserted };
+  }
+
+  private async reconcileRepo(
+    repo: string,
+    cutoff: Date,
+  ): Promise<{ prsReconciled: number; eventsInserted: number }> {
+    const numbers = await this.pullRequests.findOpenNumbersUpdatedBefore(
+      repo,
+      cutoff,
+    );
+    let prsReconciled = 0;
+    let eventsInserted = 0;
+
+    for (let i = 0; i < numbers.length; i += RECONCILE_BATCH_SIZE) {
+      const batch = numbers.slice(i, i + RECONCILE_BATCH_SIZE);
+      const nodes = await this.github.fetchPullRequestTimelinesByNumbers(
+        repo,
+        batch,
+      );
+      for (const node of nodes) {
+        const { pullRequest, events } = this.normalizer.normalizeBackfillNode(
+          repo,
+          node,
+        );
+        eventsInserted += await this.ingest.persistPr(
+          pullRequest,
+          events,
+          PrEventSource.GAP_FILL,
+        );
+        prsReconciled += 1;
+      }
+    }
+
+    return { prsReconciled, eventsInserted };
   }
 }

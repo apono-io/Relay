@@ -1,4 +1,11 @@
-import { Controller, Post, Req, Headers, HttpCode, BadRequestException } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Req,
+  Headers,
+  HttpCode,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { Request } from 'express';
@@ -24,15 +31,19 @@ export class IngestionController {
       throw new BadRequestException('Invalid signature');
     }
     this.logger.log(`Received GitHub webhook: ${event}`);
-    throw new Error('not implemented: normalize and persist webhook events, recompute PR (spec task 9, deployed path only)');
+    throw new Error(
+      'not implemented: normalize and persist webhook events, recompute PR (spec task 9, deployed path only)',
+    );
   }
 
   private verify(rawBody: Buffer | undefined, signature: string): boolean {
-    const secret = this.configService.get<string>('GITHUB_WEBHOOK_SECRET') || '';
+    const secret =
+      this.configService.get<string>('GITHUB_WEBHOOK_SECRET') || '';
     if (!secret || !rawBody || !signature) {
       return false;
     }
-    const digest = 'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
+    const digest =
+      'sha256=' + createHmac('sha256', secret).update(rawBody).digest('hex');
     const a = Buffer.from(digest);
     const b = Buffer.from(signature);
     return a.length === b.length && timingSafeEqual(a, b);

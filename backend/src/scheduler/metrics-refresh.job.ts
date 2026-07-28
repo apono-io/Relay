@@ -8,6 +8,8 @@ export class MetricsRefreshJob {
 
   @Interval('metrics-refresh', 15 * 60 * 1000)
   async run(): Promise<void> {
-    this.logger.debug('Metrics-refresh tick: recompute dashboard aggregates (safety net)');
+    this.logger.debug(
+      'Metrics-refresh tick: recompute dashboard aggregates (safety net)',
+    );
   }
 }

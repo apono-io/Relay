@@ -1,4 +1,12 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  Index,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { ObjectType, Field, ID, GraphQLISODateTime } from '@nestjs/graphql';
 import GraphQLJSON from 'graphql-type-json';
 import { PrEventType, PrEventSource } from '../pr-enums';

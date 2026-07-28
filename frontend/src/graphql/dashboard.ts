@@ -15,18 +15,8 @@ export const DASHBOARD_QUERY = gql`
         p90Seconds
         sampleSize
       }
-      cycleTime {
-        label
-        medianSeconds
-        p90Seconds
-        sampleSize
-      }
-      prCount
-      slaMisses
-      quality {
-        approvedWithZeroCommentsRate
-        revertRate
-      }
+      waitingCount
+      lastSyncedAt
       weeklyPhases {
         week
         codingSeconds
@@ -44,18 +34,24 @@ export const DASHBOARD_QUERY = gql`
         waitingOn
         waitingSeconds
         requestedReviewers
-        slaBreached
-      }
-      fairness {
-        login
-        reviewCount
-      }
-      qualityTrend {
-        week
-        approvedWithZeroCommentsRate
-        revertRate
-        prCount
+        roundNumber
+        openedAt
+        readyAt
+        firstReviewAt
+        approvedAt
       }
     }
+  }
+`;
+
+export const SYNC_NOW_MUTATION = gql`
+  mutation SyncNow {
+    syncNow
+  }
+`;
+
+export const LAST_SYNCED_QUERY = gql`
+  query LastSyncedAt {
+    lastSyncedAt
   }
 `;

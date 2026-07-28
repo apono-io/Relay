@@ -1,6 +1,7 @@
 import { Card, CardContent, Typography } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
 import type { WeeklyPhasePoint } from '@/types/dashboard';
+import { CHART_PALETTE } from '@/theme';
 
 const toHours = (seconds: number | null): number | null =>
   seconds === null || seconds === undefined ? null : Number((seconds / 3600).toFixed(2));
@@ -8,11 +9,8 @@ const toHours = (seconds: number | null): number | null =>
 export function WeeklyPhaseChart({ points }: { points: WeeklyPhasePoint[] }) {
   const weeks = points.map((p) => p.week);
   return (
-    <Card variant="outlined">
+    <Card>
       <CardContent>
-        <Typography variant="subtitle1" gutterBottom>
-          Median phase time by week
-        </Typography>
         {weeks.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
             No merged PRs yet.
@@ -20,6 +18,7 @@ export function WeeklyPhaseChart({ points }: { points: WeeklyPhasePoint[] }) {
         ) : (
           <BarChart
             height={320}
+            colors={CHART_PALETTE}
             xAxis={[{ scaleType: 'band', data: weeks }]}
             yAxis={[{ label: 'hours' }]}
             series={[

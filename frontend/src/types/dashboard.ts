@@ -5,11 +5,6 @@ export type WaitMetric = {
   sampleSize: number;
 };
 
-export type QualityGuardrail = {
-  approvedWithZeroCommentsRate: number;
-  revertRate: number;
-};
-
 export type WeeklyPhasePoint = {
   week: string;
   codingSeconds: number | null;
@@ -28,30 +23,18 @@ export type StuckPr = {
   waitingOn: string;
   waitingSeconds: number;
   requestedReviewers: string[];
-  slaBreached: boolean;
-};
-
-export type ReviewerLoad = {
-  login: string;
-  reviewCount: number;
-};
-
-export type WeeklyQualityPoint = {
-  week: string;
-  approvedWithZeroCommentsRate: number;
-  revertRate: number;
-  prCount: number;
+  roundNumber: number;
+  openedAt: string | null;
+  readyAt: string | null;
+  firstReviewAt: string | null;
+  approvedAt: string | null;
 };
 
 export type DashboardSummary = {
   reviewerWaitByRound: WaitMetric[];
   authorWaitByRound: WaitMetric[];
-  cycleTime: WaitMetric;
-  prCount: number;
-  slaMisses: number;
-  quality: QualityGuardrail;
+  waitingCount: number;
+  lastSyncedAt: string | null;
   weeklyPhases: WeeklyPhasePoint[];
   stuckNow: StuckPr[];
-  fairness: ReviewerLoad[];
-  qualityTrend: WeeklyQualityPoint[];
 };

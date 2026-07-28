@@ -5,7 +5,9 @@ const REPO = 'apono-io/apono-mono';
 const PR_NODE = 'PR_node_1';
 const READY_AT = '2026-01-02T10:00:00.000Z';
 
-function backfillNode(overrides: Record<string, any> = {}): Record<string, any> {
+function backfillNode(
+  overrides: Record<string, any> = {},
+): Record<string, any> {
   return {
     id: PR_NODE,
     number: 42,
@@ -40,7 +42,10 @@ describe('GithubEventNormalizer', () => {
     });
 
     it('maps mergedAt to a PR_MERGED event', () => {
-      const { events } = normalizer.normalizeBackfillNode(REPO, backfillNode({ mergedAt: '2026-01-03T00:00:00.000Z' }));
+      const { events } = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({ mergedAt: '2026-01-03T00:00:00.000Z' }),
+      );
       expect(events.some((e) => e.type === PrEventType.PR_MERGED)).toBe(true);
     });
 
@@ -65,25 +70,49 @@ describe('GithubEventNormalizer', () => {
 
     it('maps a dismissed review to REVIEW_DISMISSED', () => {
       const node = backfillNode({
-        reviews: { nodes: [{ id: 'PRR_1', state: 'DISMISSED', submittedAt: READY_AT, author: { login: 'bob' } }] },
+        reviews: {
+          nodes: [
+            {
+              id: 'PRR_1',
+              state: 'DISMISSED',
+              submittedAt: READY_AT,
+              author: { login: 'bob' },
+            },
+          ],
+        },
       });
       const { events } = normalizer.normalizeBackfillNode(REPO, node);
-      expect(events.find((e) => e.externalId === 'review:PRR_1')?.type).toBe(PrEventType.REVIEW_DISMISSED);
+      expect(events.find((e) => e.externalId === 'review:PRR_1')?.type).toBe(
+        PrEventType.REVIEW_DISMISSED,
+      );
     });
 
     it('maps a ReadyForReviewEvent timeline item', () => {
       const node = backfillNode({
         isDraft: true,
-        timelineItems: { nodes: [{ __typename: 'ReadyForReviewEvent', createdAt: READY_AT, actor: { login: 'alice' } }] },
+        timelineItems: {
+          nodes: [
+            {
+              __typename: 'ReadyForReviewEvent',
+              createdAt: READY_AT,
+              actor: { login: 'alice' },
+            },
+          ],
+        },
       });
       const { events } = normalizer.normalizeBackfillNode(REPO, node);
-      expect(events.some((e) => e.type === PrEventType.PR_READY_FOR_REVIEW)).toBe(true);
+      expect(
+        events.some((e) => e.type === PrEventType.PR_READY_FOR_REVIEW),
+      ).toBe(true);
     });
 
     it('extracts PR metadata including bot and revert detection', () => {
       const bot = normalizer.normalizeBackfillNode(
         REPO,
-        backfillNode({ title: 'Revert "Add a feature"', author: { login: 'dependabot[bot]', __typename: 'Bot' } }),
+        backfillNode({
+          title: 'Revert "Add a feature"',
+          author: { login: 'dependabot[bot]', __typename: 'Bot' },
+        }),
       );
       expect(bot.pullRequest.isBot).toBe(true);
       expect(bot.pullRequest.isRevert).toBe(true);
@@ -96,7 +125,12 @@ describe('GithubEventNormalizer', () => {
         action: 'opened',
         repository: { full_name: REPO },
         sender: { login: 'alice' },
-        pull_request: { number: 42, node_id: PR_NODE, draft: false, created_at: '2026-01-01T00:00:00.000Z' },
+        pull_request: {
+          number: 42,
+          node_id: PR_NODE,
+          draft: false,
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
       });
       expect(events[0].type).toBe(PrEventType.PR_OPENED);
     });
@@ -113,24 +147,49 @@ describe('GithubEventNormalizer', () => {
         action: 'opened',
         repository: { full_name: REPO },
         sender: { login: 'alice' },
-        pull_request: { number: 42, node_id: PR_NODE, draft: false, created_at: '2026-01-01T00:00:00.000Z' },
+        pull_request: {
+          number: 42,
+          node_id: PR_NODE,
+          draft: false,
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
       });
-      const bId = backfill.events.find((e) => e.type === PrEventType.PR_OPENED)!.externalId;
+      const bId = backfill.events.find(
+        (e) => e.type === PrEventType.PR_OPENED,
+      )!.externalId;
       expect(webhook[0].externalId).toBe(bId);
     });
 
     it('a review matches across sources by review node id', () => {
       const backfill = normalizer.normalizeBackfillNode(
         REPO,
-        backfillNode({ reviews: { nodes: [{ id: 'PRR_9', state: 'APPROVED', submittedAt: READY_AT, author: { login: 'bob' } }] } }),
+        backfillNode({
+          reviews: {
+            nodes: [
+              {
+                id: 'PRR_9',
+                state: 'APPROVED',
+                submittedAt: READY_AT,
+                author: { login: 'bob' },
+              },
+            ],
+          },
+        }),
       );
       const webhook = normalizer.normalizeWebhook('pull_request_review', {
         action: 'submitted',
         repository: { full_name: REPO },
         pull_request: { number: 42, node_id: PR_NODE },
-        review: { node_id: 'PRR_9', state: 'approved', submitted_at: READY_AT, user: { login: 'bob' } },
+        review: {
+          node_id: 'PRR_9',
+          state: 'approved',
+          submitted_at: READY_AT,
+          user: { login: 'bob' },
+        },
       });
-      const bId = backfill.events.find((e) => e.type === PrEventType.REVIEW_SUBMITTED)!.externalId;
+      const bId = backfill.events.find(
+        (e) => e.type === PrEventType.REVIEW_SUBMITTED,
+      )!.externalId;
       expect(webhook[0].externalId).toBe(bId);
       expect(bId).toBe('review:PRR_9');
     });
@@ -138,28 +197,51 @@ describe('GithubEventNormalizer', () => {
     it('a commit matches across sources by sha', () => {
       const backfill = normalizer.normalizeBackfillNode(
         REPO,
-        backfillNode({ commits: { nodes: [{ commit: { oid: 'sha_7', authoredDate: READY_AT, pushedDate: READY_AT } }] } }),
+        backfillNode({
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  oid: 'sha_7',
+                  authoredDate: READY_AT,
+                  pushedDate: READY_AT,
+                },
+              },
+            ],
+          },
+        }),
       );
       const webhook = normalizer.normalizeWebhook('push', {
         repository: { full_name: REPO },
         ref: 'refs/heads/feature',
-        commits: [{ id: 'sha_7', timestamp: READY_AT, author: { username: 'alice' } }],
+        commits: [
+          { id: 'sha_7', timestamp: READY_AT, author: { username: 'alice' } },
+        ],
       });
-      const bId = backfill.events.find((e) => e.type === PrEventType.COMMIT_PUSHED)!.externalId;
+      const bId = backfill.events.find(
+        (e) => e.type === PrEventType.COMMIT_PUSHED,
+      )!.externalId;
       expect(webhook[0].externalId).toBe(bId);
     });
 
     it('a ready-for-review transition matches across sources by timestamp', () => {
       const backfill = normalizer.normalizeBackfillNode(
         REPO,
-        backfillNode({ isDraft: true, timelineItems: { nodes: [{ __typename: 'ReadyForReviewEvent', createdAt: READY_AT }] } }),
+        backfillNode({
+          isDraft: true,
+          timelineItems: {
+            nodes: [{ __typename: 'ReadyForReviewEvent', createdAt: READY_AT }],
+          },
+        }),
       );
       const webhook = normalizer.normalizeWebhook('pull_request', {
         action: 'ready_for_review',
         repository: { full_name: REPO },
         pull_request: { number: 42, node_id: PR_NODE, updated_at: READY_AT },
       });
-      const bId = backfill.events.find((e) => e.type === PrEventType.PR_READY_FOR_REVIEW)!.externalId;
+      const bId = backfill.events.find(
+        (e) => e.type === PrEventType.PR_READY_FOR_REVIEW,
+      )!.externalId;
       expect(webhook[0].externalId).toBe(bId);
     });
 
@@ -168,11 +250,24 @@ describe('GithubEventNormalizer', () => {
         action: 'submitted',
         repository: { full_name: REPO },
         pull_request: { number: 42, node_id: PR_NODE },
-        review: { node_id: 'PRR_9', state: 'approved', submitted_at: READY_AT, user: { login: 'bob' } },
+        review: {
+          node_id: 'PRR_9',
+          state: 'approved',
+          submitted_at: READY_AT,
+          user: { login: 'bob' },
+        },
       };
-      const first = normalizer.normalizeWebhook('pull_request_review', delivery);
-      const replay = normalizer.normalizeWebhook('pull_request_review', delivery);
-      expect(replay.map((e) => e.externalId)).toEqual(first.map((e) => e.externalId));
+      const first = normalizer.normalizeWebhook(
+        'pull_request_review',
+        delivery,
+      );
+      const replay = normalizer.normalizeWebhook(
+        'pull_request_review',
+        delivery,
+      );
+      expect(replay.map((e) => e.externalId)).toEqual(
+        first.map((e) => e.externalId),
+      );
     });
   });
 });

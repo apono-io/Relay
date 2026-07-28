@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { NormalizedEvent, NormalizedPullRequest } from './github-event-normalizer.service';
+import {
+  NormalizedEvent,
+  NormalizedPullRequest,
+} from './github-event-normalizer.service';
 import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entity';
 import { PullRequestsService } from '@/domains/pull-requests/pull-requests.service';
@@ -12,7 +15,8 @@ import { PrEventSource } from '@/domains/pull-requests/pr-enums';
 export class PrIngestService {
   constructor(
     @InjectRepository(PrEvent) private readonly eventRepo: Repository<PrEvent>,
-    @InjectRepository(PullRequest) private readonly prRepo: Repository<PullRequest>,
+    @InjectRepository(PullRequest)
+    private readonly prRepo: Repository<PullRequest>,
     private readonly pullRequests: PullRequestsService,
     private readonly configService: ConfigService,
   ) {}
@@ -29,7 +33,9 @@ export class PrIngestService {
     events: NormalizedEvent[],
     sourceOverride?: PrEventSource,
   ): Promise<number> {
-    let pr = await this.prRepo.findOne({ where: { repo: header.repo, number: header.number } });
+    let pr = await this.prRepo.findOne({
+      where: { repo: header.repo, number: header.number },
+    });
     if (!pr) {
       pr = this.prRepo.create({ repo: header.repo, number: header.number });
     }

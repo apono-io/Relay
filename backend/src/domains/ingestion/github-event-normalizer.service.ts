@@ -36,12 +36,25 @@ type ExternalIdInput =
   | { kind: 'commit'; sha: string }
   | { kind: 'check'; suiteNodeId: string; headSha: string }
   | { kind: 'pr-lifecycle'; prNodeId: string; type: PrEventType }
-  | { kind: 'pr-transition'; prNodeId: string; type: PrEventType; occurredAt: Date }
-  | { kind: 'review-request'; prNodeId: string; type: PrEventType; reviewer: string; occurredAt: Date };
+  | {
+      kind: 'pr-transition';
+      prNodeId: string;
+      type: PrEventType;
+      occurredAt: Date;
+    }
+  | {
+      kind: 'review-request';
+      prNodeId: string;
+      type: PrEventType;
+      reviewer: string;
+      occurredAt: Date;
+    };
 
 const iso = (value: unknown): Date => new Date(value as string);
-const isBotLogin = (login: string | undefined): boolean => !!login && login.endsWith('[bot]');
-const looksLikeRevert = (title: string): boolean => /^revert\b/i.test(title.trim());
+const isBotLogin = (login: string | undefined): boolean =>
+  !!login && login.endsWith('[bot]');
+const looksLikeRevert = (title: string): boolean =>
+  /^revert\b/i.test(title.trim());
 
 @Injectable()
 export class GithubEventNormalizer {
@@ -64,7 +77,10 @@ export class GithubEventNormalizer {
     }
   }
 
-  normalizeWebhook(deliveryType: string, payload: Record<string, any>): NormalizedEvent[] {
+  normalizeWebhook(
+    deliveryType: string,
+    payload: Record<string, any>,
+  ): NormalizedEvent[] {
     switch (deliveryType) {
       case 'pull_request':
         return this.webhookPullRequest(payload);
@@ -82,7 +98,10 @@ export class GithubEventNormalizer {
     }
   }
 
-  normalizeBackfillNode(repo: string, prNode: Record<string, any>): BackfillResult {
+  normalizeBackfillNode(
+    repo: string,
+    prNode: Record<string, any>,
+  ): BackfillResult {
     const prNodeId = prNode.id as string;
     const prNumber = prNode.number as number;
     const authorLogin = prNode.author?.login ?? 'unknown';
@@ -96,7 +115,11 @@ export class GithubEventNormalizer {
       actorLogin: authorLogin,
       payload: { isDraft: !!prNode.isDraft },
       occurredAt: iso(prNode.createdAt),
-      externalId: this.buildExternalId({ kind: 'pr-lifecycle', prNodeId, type: PrEventType.PR_OPENED }),
+      externalId: this.buildExternalId({
+        kind: 'pr-lifecycle',
+        prNodeId,
+        type: PrEventType.PR_OPENED,
+      }),
     });
 
     if (prNode.mergedAt) {
@@ -105,7 +128,11 @@ export class GithubEventNormalizer {
         type: PrEventType.PR_MERGED,
         actorLogin: prNode.mergedBy?.login ?? authorLogin,
         occurredAt: iso(prNode.mergedAt),
-        externalId: this.buildExternalId({ kind: 'pr-lifecycle', prNodeId, type: PrEventType.PR_MERGED }),
+        externalId: this.buildExternalId({
+          kind: 'pr-lifecycle',
+          prNodeId,
+          type: PrEventType.PR_MERGED,
+        }),
       });
     } else if (prNode.closedAt) {
       events.push({
@@ -113,7 +140,11 @@ export class GithubEventNormalizer {
         type: PrEventType.PR_CLOSED,
         actorLogin: authorLogin,
         occurredAt: iso(prNode.closedAt),
-        externalId: this.buildExternalId({ kind: 'pr-lifecycle', prNodeId, type: PrEventType.PR_CLOSED }),
+        externalId: this.buildExternalId({
+          kind: 'pr-lifecycle',
+          prNodeId,
+          type: PrEventType.PR_CLOSED,
+        }),
       });
     }
 
@@ -129,14 +160,19 @@ export class GithubEventNormalizer {
           authoredDate: commit.authoredDate,
           pushedDate: commit.pushedDate ?? commit.committedDate,
         },
-        occurredAt: iso(commit.pushedDate ?? commit.committedDate ?? commit.authoredDate),
+        occurredAt: iso(
+          commit.pushedDate ?? commit.committedDate ?? commit.authoredDate,
+        ),
         externalId: this.buildExternalId({ kind: 'commit', sha }),
       });
     }
 
     for (const review of prNode.reviews?.nodes ?? []) {
       const state = String(review.state ?? '').toLowerCase();
-      const type = state === 'dismissed' ? PrEventType.REVIEW_DISMISSED : PrEventType.REVIEW_SUBMITTED;
+      const type =
+        state === 'dismissed'
+          ? PrEventType.REVIEW_DISMISSED
+          : PrEventType.REVIEW_SUBMITTED;
       events.push({
         ...base,
         type,
@@ -153,7 +189,10 @@ export class GithubEventNormalizer {
         type: PrEventType.COMMENT,
         actorLogin: comment.author?.login,
         occurredAt: iso(comment.createdAt),
-        externalId: this.buildExternalId({ kind: 'comment', nodeId: comment.id }),
+        externalId: this.buildExternalId({
+          kind: 'comment',
+          nodeId: comment.id,
+        }),
       });
     }
 
@@ -164,15 +203,22 @@ export class GithubEventNormalizer {
       }
     }
 
-    const rollup = prNode.commits?.nodes?.[prNode.commits.nodes.length - 1]?.commit?.statusCheckRollup;
+    const rollup =
+      prNode.commits?.nodes?.[prNode.commits.nodes.length - 1]?.commit
+        ?.statusCheckRollup;
     if (rollup?.state) {
-      const headSha = prNode.commits.nodes[prNode.commits.nodes.length - 1].commit.oid as string;
+      const headSha = prNode.commits.nodes[prNode.commits.nodes.length - 1]
+        .commit.oid as string;
       events.push({
         ...base,
         type: PrEventType.CHECK_STATE_CHANGED,
         payload: { state: this.mapCheckState(rollup.state) },
         occurredAt: iso(prNode.updatedAt ?? prNode.createdAt),
-        externalId: this.buildExternalId({ kind: 'check', suiteNodeId: prNodeId, headSha }),
+        externalId: this.buildExternalId({
+          kind: 'check',
+          suiteNodeId: prNodeId,
+          headSha,
+        }),
       });
     }
 
@@ -192,7 +238,12 @@ export class GithubEventNormalizer {
   }
 
   private backfillTimelineItem(
-    base: { repo: string; prNumber: number; prNodeId: string; source: PrEventSource },
+    base: {
+      repo: string;
+      prNumber: number;
+      prNodeId: string;
+      source: PrEventSource;
+    },
     prNodeId: string,
     item: Record<string, any>,
   ): NormalizedEvent | null {
@@ -204,7 +255,12 @@ export class GithubEventNormalizer {
           type: PrEventType.PR_READY_FOR_REVIEW,
           actorLogin: item.actor?.login,
           occurredAt,
-          externalId: this.buildExternalId({ kind: 'pr-transition', prNodeId, type: PrEventType.PR_READY_FOR_REVIEW, occurredAt }),
+          externalId: this.buildExternalId({
+            kind: 'pr-transition',
+            prNodeId,
+            type: PrEventType.PR_READY_FOR_REVIEW,
+            occurredAt,
+          }),
         };
       case 'ConvertToDraftEvent':
         return {
@@ -212,7 +268,12 @@ export class GithubEventNormalizer {
           type: PrEventType.PR_CONVERTED_TO_DRAFT,
           actorLogin: item.actor?.login,
           occurredAt,
-          externalId: this.buildExternalId({ kind: 'pr-transition', prNodeId, type: PrEventType.PR_CONVERTED_TO_DRAFT, occurredAt }),
+          externalId: this.buildExternalId({
+            kind: 'pr-transition',
+            prNodeId,
+            type: PrEventType.PR_CONVERTED_TO_DRAFT,
+            occurredAt,
+          }),
         };
       case 'ReviewRequestedEvent':
         return {
@@ -268,28 +329,46 @@ export class GithubEventNormalizer {
             type: PrEventType.PR_OPENED,
             payload: { isDraft: !!pr.draft },
             occurredAt: iso(pr.created_at),
-            externalId: this.buildExternalId({ kind: 'pr-lifecycle', prNodeId, type: PrEventType.PR_OPENED }),
+            externalId: this.buildExternalId({
+              kind: 'pr-lifecycle',
+              prNodeId,
+              type: PrEventType.PR_OPENED,
+            }),
           },
         ];
       case 'ready_for_review': {
-        const occurredAt = iso(payload.pull_request.updated_at ?? new Date().toISOString());
+        const occurredAt = iso(
+          payload.pull_request.updated_at ?? new Date().toISOString(),
+        );
         return [
           {
             ...base,
             type: PrEventType.PR_READY_FOR_REVIEW,
             occurredAt,
-            externalId: this.buildExternalId({ kind: 'pr-transition', prNodeId, type: PrEventType.PR_READY_FOR_REVIEW, occurredAt }),
+            externalId: this.buildExternalId({
+              kind: 'pr-transition',
+              prNodeId,
+              type: PrEventType.PR_READY_FOR_REVIEW,
+              occurredAt,
+            }),
           },
         ];
       }
       case 'converted_to_draft': {
-        const occurredAt = iso(payload.pull_request.updated_at ?? new Date().toISOString());
+        const occurredAt = iso(
+          payload.pull_request.updated_at ?? new Date().toISOString(),
+        );
         return [
           {
             ...base,
             type: PrEventType.PR_CONVERTED_TO_DRAFT,
             occurredAt,
-            externalId: this.buildExternalId({ kind: 'pr-transition', prNodeId, type: PrEventType.PR_CONVERTED_TO_DRAFT, occurredAt }),
+            externalId: this.buildExternalId({
+              kind: 'pr-transition',
+              prNodeId,
+              type: PrEventType.PR_CONVERTED_TO_DRAFT,
+              occurredAt,
+            }),
           },
         ];
       }
@@ -300,7 +379,11 @@ export class GithubEventNormalizer {
               ...base,
               type: PrEventType.PR_MERGED,
               occurredAt: iso(pr.merged_at),
-              externalId: this.buildExternalId({ kind: 'pr-lifecycle', prNodeId, type: PrEventType.PR_MERGED }),
+              externalId: this.buildExternalId({
+                kind: 'pr-lifecycle',
+                prNodeId,
+                type: PrEventType.PR_MERGED,
+              }),
             },
           ];
         }
@@ -309,14 +392,23 @@ export class GithubEventNormalizer {
             ...base,
             type: PrEventType.PR_CLOSED,
             occurredAt: iso(pr.closed_at),
-            externalId: this.buildExternalId({ kind: 'pr-lifecycle', prNodeId, type: PrEventType.PR_CLOSED }),
+            externalId: this.buildExternalId({
+              kind: 'pr-lifecycle',
+              prNodeId,
+              type: PrEventType.PR_CLOSED,
+            }),
           },
         ];
       case 'review_requested':
       case 'review_request_removed': {
         const type =
-          payload.action === 'review_requested' ? PrEventType.REVIEW_REQUESTED : PrEventType.REVIEW_REQUEST_REMOVED;
-        const reviewer = payload.requested_reviewer?.login ?? payload.requested_team?.slug ?? 'unknown';
+          payload.action === 'review_requested'
+            ? PrEventType.REVIEW_REQUESTED
+            : PrEventType.REVIEW_REQUEST_REMOVED;
+        const reviewer =
+          payload.requested_reviewer?.login ??
+          payload.requested_team?.slug ??
+          'unknown';
         const occurredAt = iso(pr.updated_at ?? new Date().toISOString());
         return [
           {
@@ -324,7 +416,13 @@ export class GithubEventNormalizer {
             type,
             payload: { reviewer },
             occurredAt,
-            externalId: this.buildExternalId({ kind: 'review-request', prNodeId, type, reviewer, occurredAt }),
+            externalId: this.buildExternalId({
+              kind: 'review-request',
+              prNodeId,
+              type,
+              reviewer,
+              occurredAt,
+            }),
           },
         ];
       }
@@ -343,12 +441,17 @@ export class GithubEventNormalizer {
         repo: payload.repository.full_name,
         prNumber: pr.number,
         prNodeId: pr.node_id,
-        type: dismissed ? PrEventType.REVIEW_DISMISSED : PrEventType.REVIEW_SUBMITTED,
+        type: dismissed
+          ? PrEventType.REVIEW_DISMISSED
+          : PrEventType.REVIEW_SUBMITTED,
         actorLogin: review.user?.login,
         payload: { state },
         occurredAt: iso(review.submitted_at ?? pr.updated_at),
         source: PrEventSource.WEBHOOK,
-        externalId: this.buildExternalId({ kind: 'review', nodeId: review.node_id }),
+        externalId: this.buildExternalId({
+          kind: 'review',
+          nodeId: review.node_id,
+        }),
       },
     ];
   }
@@ -365,7 +468,10 @@ export class GithubEventNormalizer {
         actorLogin: comment.user?.login,
         occurredAt: iso(comment.created_at),
         source: PrEventSource.WEBHOOK,
-        externalId: this.buildExternalId({ kind: 'comment', nodeId: comment.node_id }),
+        externalId: this.buildExternalId({
+          kind: 'comment',
+          nodeId: comment.node_id,
+        }),
       },
     ];
   }
@@ -378,7 +484,12 @@ export class GithubEventNormalizer {
       prNumber: 0,
       type: PrEventType.COMMIT_PUSHED,
       actorLogin: commit.author?.username,
-      payload: { oid: commit.id, authoredDate: commit.timestamp, pushedDate: commit.timestamp, ref: payload.ref },
+      payload: {
+        oid: commit.id,
+        authoredDate: commit.timestamp,
+        pushedDate: commit.timestamp,
+        ref: payload.ref,
+      },
       occurredAt: iso(commit.timestamp),
       source: PrEventSource.WEBHOOK,
       externalId: this.buildExternalId({ kind: 'commit', sha: commit.id }),
@@ -393,10 +504,16 @@ export class GithubEventNormalizer {
         prNumber: suite.pull_requests?.[0]?.number ?? 0,
         prNodeId: suite.pull_requests?.[0]?.node_id,
         type: PrEventType.CHECK_STATE_CHANGED,
-        payload: { state: this.mapCheckState(suite.conclusion ?? suite.status) },
+        payload: {
+          state: this.mapCheckState(suite.conclusion ?? suite.status),
+        },
         occurredAt: iso(suite.updated_at ?? new Date().toISOString()),
         source: PrEventSource.WEBHOOK,
-        externalId: this.buildExternalId({ kind: 'check', suiteNodeId: suite.node_id, headSha: suite.head_sha }),
+        externalId: this.buildExternalId({
+          kind: 'check',
+          suiteNodeId: suite.node_id,
+          headSha: suite.head_sha,
+        }),
       },
     ];
   }
@@ -406,7 +523,16 @@ export class GithubEventNormalizer {
     if (['success', 'passing', 'completed'].includes(value)) {
       return 'passing';
     }
-    if (['failure', 'failing', 'error', 'timed_out', 'cancelled', 'action_required'].includes(value)) {
+    if (
+      [
+        'failure',
+        'failing',
+        'error',
+        'timed_out',
+        'cancelled',
+        'action_required',
+      ].includes(value)
+    ) {
       return 'failing';
     }
     return 'pending';

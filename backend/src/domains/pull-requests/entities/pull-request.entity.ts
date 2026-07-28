@@ -1,5 +1,21 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index, OneToMany, Unique } from 'typeorm';
-import { ObjectType, Field, ID, Int, Float, GraphQLISODateTime } from '@nestjs/graphql';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  OneToMany,
+  Unique,
+} from 'typeorm';
+import {
+  ObjectType,
+  Field,
+  ID,
+  Int,
+  Float,
+  GraphQLISODateTime,
+} from '@nestjs/graphql';
 import { PrEvent } from './pr-event.entity';
 import { PrState, WaitingOn, CheckState, PrSize } from '../pr-enums';
 
@@ -146,7 +162,11 @@ export class PullRequest {
   reviewDueAt?: Date;
 
   @Column({ type: 'jsonb', default: [] })
-  waitRounds: { round: number; reviewerWaitSeconds: number | null; authorWaitSeconds: number | null }[];
+  waitRounds: {
+    round: number;
+    reviewerWaitSeconds: number | null;
+    authorWaitSeconds: number | null;
+  }[];
 
   @OneToMany(() => PrEvent, (event) => event.pullRequest)
   events: PrEvent[];

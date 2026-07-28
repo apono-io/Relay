@@ -5,8 +5,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { AuthResolver } from './auth.resolver';
+import { GithubLinkService } from './github-link.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
+import { PeopleModule } from '@/domains/people/people.module';
 
 @Module({
   imports: [
@@ -19,9 +21,16 @@ import { GoogleStrategy } from './strategies/google.strategy';
         signOptions: { expiresIn: '1d' },
       }),
     }),
+    PeopleModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthResolver, JwtStrategy, GoogleStrategy],
+  providers: [
+    AuthService,
+    AuthResolver,
+    GithubLinkService,
+    JwtStrategy,
+    GoogleStrategy,
+  ],
   exports: [AuthService],
 })
 export class AuthModule {}

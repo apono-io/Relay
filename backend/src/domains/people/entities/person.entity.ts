@@ -1,5 +1,14 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Index,
+  OneToMany,
+} from 'typeorm';
 import { ObjectType, Field, ID } from '@nestjs/graphql';
+import { GithubIdentity } from './github-identity.entity';
 
 @ObjectType('Person')
 @Entity('people')
@@ -12,10 +21,10 @@ export class Person {
   @Column({ unique: true })
   email: string;
 
-  @Field({ nullable: true })
+  @Field(() => String, { nullable: true })
   @Index({ unique: true, where: '"githubLogin" IS NOT NULL' })
-  @Column({ nullable: true })
-  githubLogin?: string;
+  @Column({ type: 'varchar', nullable: true })
+  githubLogin?: string | null;
 
   @Field({ nullable: true })
   @Column({ nullable: true })
@@ -36,6 +45,10 @@ export class Person {
   @Field()
   @Column({ default: true })
   active: boolean;
+
+  @Field(() => [GithubIdentity])
+  @OneToMany(() => GithubIdentity, (identity) => identity.person)
+  identities: GithubIdentity[];
 
   @Field()
   @CreateDateColumn()

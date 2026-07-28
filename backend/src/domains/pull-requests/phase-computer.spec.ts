@@ -52,8 +52,18 @@ describe('PhaseComputer', () => {
   it('skips bot reviews when picking the first review (pickup = first human review)', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(0.05), { state: 'commented' }, 'github-code-quality'),
-      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'commented' }, 'dependabot[bot]'),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(0.05),
+        { state: 'commented' },
+        'github-code-quality',
+      ),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(1),
+        { state: 'commented' },
+        'dependabot[bot]',
+      ),
       ev(PrEventType.REVIEW_SUBMITTED, h(3), { state: 'approved' }, 'reviewer'),
     ];
     const bots = new Set(['github-code-quality']);
@@ -75,8 +85,16 @@ describe('PhaseComputer', () => {
   it('splits Rework into per-round Reviewer Wait and Author Wait', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(2), { state: 'changes_requested' }, 'reviewer'),
-      ev(PrEventType.COMMIT_PUSHED, h(5), { authoredDate: h(5).toISOString(), pushedDate: h(5).toISOString() }),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(2),
+        { state: 'changes_requested' },
+        'reviewer',
+      ),
+      ev(PrEventType.COMMIT_PUSHED, h(5), {
+        authoredDate: h(5).toISOString(),
+        pushedDate: h(5).toISOString(),
+      }),
       ev(PrEventType.REVIEW_SUBMITTED, h(6), { state: 'approved' }, 'reviewer'),
     ];
     const result = computer.compute(events, SLA);
@@ -90,7 +108,12 @@ describe('PhaseComputer', () => {
   it('counts a review submitted while draft as not started until ready_at', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: true }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'commented' }, 'reviewer'),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(1),
+        { state: 'commented' },
+        'reviewer',
+      ),
       ev(PrEventType.PR_READY_FOR_REVIEW, h(2)),
       ev(PrEventType.REVIEW_SUBMITTED, h(3), { state: 'approved' }, 'reviewer'),
     ];
@@ -103,7 +126,12 @@ describe('PhaseComputer', () => {
   it('never produces a negative pickup_time when the only review was pre-ready', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: true }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'commented' }, 'reviewer'),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(1),
+        { state: 'commented' },
+        'reviewer',
+      ),
     ];
     const result = computer.compute(events, SLA);
     expect(result.pickupTime).toBe(0);
@@ -134,7 +162,10 @@ describe('PhaseComputer', () => {
 
   it('clamps rework_time to 0 when approved with no further commits', () => {
     const events = [
-      ev(PrEventType.COMMIT_PUSHED, h(0), { authoredDate: h(0).toISOString(), pushedDate: h(0).toISOString() }),
+      ev(PrEventType.COMMIT_PUSHED, h(0), {
+        authoredDate: h(0).toISOString(),
+        pushedDate: h(0).toISOString(),
+      }),
       ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
       ev(PrEventType.REVIEW_SUBMITTED, h(2), { state: 'approved' }, 'reviewer'),
     ];
@@ -169,8 +200,14 @@ describe('PhaseComputer', () => {
 
   it('uses earliest authored commit and latest pushed commit (rebase safe)', () => {
     const events = [
-      ev(PrEventType.COMMIT_PUSHED, h(5), { authoredDate: h(0).toISOString(), pushedDate: h(5).toISOString() }),
-      ev(PrEventType.COMMIT_PUSHED, h(6), { authoredDate: h(1).toISOString(), pushedDate: h(6).toISOString() }),
+      ev(PrEventType.COMMIT_PUSHED, h(5), {
+        authoredDate: h(0).toISOString(),
+        pushedDate: h(5).toISOString(),
+      }),
+      ev(PrEventType.COMMIT_PUSHED, h(6), {
+        authoredDate: h(1).toISOString(),
+        pushedDate: h(6).toISOString(),
+      }),
       ev(PrEventType.PR_OPENED, h(6), { isDraft: false }),
     ];
     const result = computer.compute(events, SLA);
@@ -181,10 +218,26 @@ describe('PhaseComputer', () => {
   it('counts each changes-requested -> re-review loop as one rework cycle', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'changes_requested' }, 'reviewer'),
-      ev(PrEventType.COMMIT_PUSHED, h(2), { authoredDate: h(2).toISOString(), pushedDate: h(2).toISOString() }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(3), { state: 'changes_requested' }, 'reviewer'),
-      ev(PrEventType.COMMIT_PUSHED, h(4), { authoredDate: h(4).toISOString(), pushedDate: h(4).toISOString() }),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(1),
+        { state: 'changes_requested' },
+        'reviewer',
+      ),
+      ev(PrEventType.COMMIT_PUSHED, h(2), {
+        authoredDate: h(2).toISOString(),
+        pushedDate: h(2).toISOString(),
+      }),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(3),
+        { state: 'changes_requested' },
+        'reviewer',
+      ),
+      ev(PrEventType.COMMIT_PUSHED, h(4), {
+        authoredDate: h(4).toISOString(),
+        pushedDate: h(4).toISOString(),
+      }),
       ev(PrEventType.REVIEW_SUBMITTED, h(5), { state: 'approved' }, 'reviewer'),
     ];
     const result = computer.compute(events, SLA);
@@ -216,13 +269,20 @@ describe('PhaseComputer', () => {
     const events = [ev(PrEventType.PR_OPENED, h(0), { isDraft: false })];
     const result = computer.compute(events, SLA);
     expect(result.waitingOn).toBe(WaitingOn.REVIEWER);
-    expect(result.reviewDueAt).toEqual(new Date(h(0).getTime() + SLA * 60 * 1000));
+    expect(result.reviewDueAt).toEqual(
+      new Date(h(0).getTime() + SLA * 60 * 1000),
+    );
   });
 
   it('marks author-waiting after a changes-requested review', () => {
     const events = [
       ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
-      ev(PrEventType.REVIEW_SUBMITTED, h(1), { state: 'changes_requested' }, 'reviewer'),
+      ev(
+        PrEventType.REVIEW_SUBMITTED,
+        h(1),
+        { state: 'changes_requested' },
+        'reviewer',
+      ),
     ];
     const result = computer.compute(events, SLA);
     expect(result.waitingOn).toBe(WaitingOn.AUTHOR);

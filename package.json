@@ -19,7 +19,7 @@
     ]
   },
   "scripts": {
-    "dev": "tilt up --port=10351",
+    "dev": "tilt up --port=10352",
     "install:backend": "cd backend && yarn install",
     "install:frontend": "cd frontend && yarn install",
     "build": "yarn workspace backend build && yarn workspace frontend build",

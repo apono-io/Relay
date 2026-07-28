@@ -10,13 +10,19 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(configService: ConfigService) {
     super({
       clientID: configService.get<string>('GOOGLE_CLIENT_ID') || 'unconfigured',
-      clientSecret: configService.get<string>('GOOGLE_CLIENT_SECRET') || 'unconfigured',
+      clientSecret:
+        configService.get<string>('GOOGLE_CLIENT_SECRET') || 'unconfigured',
       callbackURL:
         configService.get<string>('GOOGLE_CALLBACK_URL') ||
         'http://localhost:3000/auth/google/callback',
       scope: ['email', 'profile'],
     });
-    this.allowedDomain = configService.get<string>('ALLOWED_EMAIL_DOMAIN') || 'apono.io';
+    this.allowedDomain =
+      configService.get<string>('ALLOWED_EMAIL_DOMAIN') || 'apono.io';
+  }
+
+  authorizationParams(): Record<string, string> {
+    return { prompt: 'select_account', hd: this.allowedDomain };
   }
 
   async validate(
@@ -27,7 +33,10 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   ): Promise<void> {
     const email = profile.emails?.[0]?.value ?? '';
     if (!email.endsWith(`@${this.allowedDomain}`)) {
-      return done(new UnauthorizedException('Email domain not allowed'), undefined);
+      return done(
+        new UnauthorizedException('Email domain not allowed'),
+        undefined,
+      );
     }
     done(null, {
       email,

@@ -7,7 +7,9 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { join } from 'path';
 
 import { AppController } from './app.controller';
+import { formatGraphqlError } from './infrastructure/graphql/format-error';
 import { InfrastructureModule } from './infrastructure/infrastructure.module';
+import { RbacModule } from './core/rbac/rbac.module';
 import { AuthModule } from './core/auth/auth.module';
 import { PeopleModule } from './domains/people/people.module';
 import { PullRequestsModule } from './domains/pull-requests/pull-requests.module';
@@ -17,6 +19,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 
 import dataSource from '../data-source';
 import { Person } from './domains/people/entities/person.entity';
+import { GithubIdentity } from './domains/people/entities/github-identity.entity';
 import { PullRequest } from './domains/pull-requests/entities/pull-request.entity';
 import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
 
@@ -26,7 +29,7 @@ import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
     ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       ...dataSource.options,
-      entities: [Person, PullRequest, PrEvent],
+      entities: [Person, GithubIdentity, PullRequest, PrEvent],
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
       synchronize: false,
       migrationsRun: true,
@@ -40,10 +43,12 @@ import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
         sortSchema: true,
         playground: configService.get('NODE_ENV') !== 'production',
         context: ({ req }) => ({ req }),
+        formatError: formatGraphqlError,
       }),
     }),
 
     InfrastructureModule,
+    RbacModule,
 
     AuthModule,
     PeopleModule,
