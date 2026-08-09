@@ -77,6 +77,9 @@ export class StuckPr {
   @Field(() => [String])
   requestedReviewers: string[];
 
+  @Field(() => [String])
+  reviewerLogins: string[];
+
   @Field()
   slaBreached: boolean;
 
@@ -123,6 +126,27 @@ export class WeeklyQualityPoint {
   prCount: number;
 }
 
+@ObjectType('WeeklyFlowPoint')
+export class WeeklyFlowPoint {
+  @Field()
+  week: string;
+
+  @Field(() => GraphQLISODateTime)
+  weekStart: Date;
+
+  @Field(() => Int)
+  opened: number;
+
+  @Field(() => Int)
+  merged: number;
+
+  @Field(() => Float, { nullable: true })
+  cycleP50Seconds?: number;
+
+  @Field(() => Float, { nullable: true })
+  cycleP90Seconds?: number;
+}
+
 @ObjectType('DashboardSummary')
 export class DashboardSummary {
   @Field(() => [WaitMetric])
@@ -160,6 +184,9 @@ export class DashboardSummary {
 
   @Field(() => [WeeklyQualityPoint])
   qualityTrend: WeeklyQualityPoint[];
+
+  @Field(() => [WeeklyFlowPoint])
+  weeklyFlow: WeeklyFlowPoint[];
 
   @Field(() => Date, { nullable: true })
   lastSyncedAt: Date | null;

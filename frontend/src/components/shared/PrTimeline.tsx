@@ -87,7 +87,7 @@ function StageNode({ stage, status }: { stage: Stage; status: StageStatus }) {
           fontWeight: 700,
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
-          color: chipToneColor(theme, 'amber'),
+          color: chipToneColor(theme, 'blue'),
           visibility: status === 'current' ? 'visible' : 'hidden',
         })}
       >
@@ -96,7 +96,7 @@ function StageNode({ stage, status }: { stage: Stage; status: StageStatus }) {
       <Box
         sx={(theme) => {
           const doneColor = chipToneColor(theme, stage.merged ? 'purple' : 'green');
-          const currentColor = chipToneColor(theme, 'amber');
+          const currentColor = chipToneColor(theme, 'blue');
           const palette = {
             done: {
               color: doneColor,
@@ -141,29 +141,31 @@ function StageNode({ stage, status }: { stage: Stage; status: StageStatus }) {
       <Box sx={{ textAlign: 'center' }}>
         <Typography
           variant="caption"
-          sx={{
+          sx={(theme) => ({
             display: 'block',
             fontWeight: 600,
             lineHeight: 1.3,
             fontSize: 11,
-            color: status === 'done' || status === 'current' ? 'text.primary' : 'text.disabled',
-          }}
+            color:
+              status === 'current'
+                ? chipToneColor(theme, 'blue')
+                : status === 'done'
+                  ? 'text.primary'
+                  : 'text.disabled',
+          })}
         >
-          {stage.label}
+          {status === 'current' ? stage.waitingText : stage.label}
         </Typography>
         <Typography
           variant="caption"
-          sx={(theme) => ({
+          sx={{
             display: 'block',
             lineHeight: 1.3,
             fontSize: 11,
-            color:
-              status === 'current' ? chipToneColor(theme, 'amber') : 'text.secondary',
-            fontWeight: status === 'current' ? 600 : 400,
-          })}
+            color: 'text.secondary',
+          }}
         >
           {status === 'done' && stage.at ? format(stage.at, 'MMM d, HH:mm') : null}
-          {status === 'current' ? stage.waitingText : null}
           {status === 'skipped' ? 'skipped' : null}
         </Typography>
       </Box>

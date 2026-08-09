@@ -1,4 +1,4 @@
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { subDays } from 'date-fns';
 import { PullRequest } from './entities/pull-request.entity';
@@ -54,8 +54,19 @@ export class PullRequestsResolver {
   @UseGuards(JwtAuthGuard)
   async myReviews(@CurrentUser() user: AuthenticatedUser): Promise<MyReviews> {
     const logins = await this.viewerLogins(user);
-    const waiting = await this.pullRequestsService.findAwaitingReviewBy(logins);
-    return { logins, waiting };
+    const [open, recentlyMerged] = await Promise.all([
+      this.pullRequestsService.findOpenReviewedBy(logins),
+      this.pullRequestsService.findRecentlyMergedReviewedBy(
+        logins,
+        subDays(new Date(), MERGED_WINDOW_DAYS),
+      ),
+    ]);
+    return { logins, open, recentlyMerged };
+  }
+
+  @ResolveField(() => [String], { name: 'reviewerLogins' })
+  reviewerLogins(@Parent() pr: PullRequest): Promise<string[]> {
+    return this.pullRequestsService.humanReviewerLogins(pr.id, pr.authorLogin);
   }
 
   private async viewerLogins(user: AuthenticatedUser): Promise<string[]> {

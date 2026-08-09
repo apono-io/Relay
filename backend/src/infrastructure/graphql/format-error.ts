@@ -13,8 +13,7 @@ export function formatGraphqlError(
   error: GraphQLFormattedError,
 ): GraphQLFormattedError {
   const originalError = error.extensions?.originalError as
-    | { statusCode?: number; message?: string }
-    | undefined;
+    { statusCode?: number; message?: string } | undefined;
   const status =
     originalError?.statusCode ?? (error.extensions?.status as number) ?? 500;
   const apolloCode = error.extensions?.code as string | undefined;

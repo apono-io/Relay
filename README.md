@@ -9,6 +9,27 @@ This repository is cloned from the apono-backoffice stack: NestJS + code-first G
 (Apollo) + TypeORM/Postgres on the backend, React 19 + MUI 7 + Apollo Client on the
 frontend, Google OAuth for login, and Tilt for local orchestration.
 
+## What the app does today
+
+- **Dashboard** — every open PR that waits on someone, split into three sections:
+  *Needs a reviewer* (nobody assigned — the attention chip pulses), *In progress*
+  (reviewer, author, or CI has the ball), and *Stalled over a week*. Each row expands
+  into the PR lifecycle timeline (opened → ready → first review → approved → merged).
+- **Analytics** — KPI cards (time to merge, review pickup, merged this week, waiting
+  now) over a panel grid: opened-vs-merged weekly flow, time-to-merge trend (median +
+  p90), open-PR age distribution, review depth (zero-comment approvals + reverts), and
+  the per-round wait breakdown.
+- **My PRs / My Reviews** — the personal inbox: your open PRs with who holds the ball,
+  your recently merged, and everything waiting on your review.
+- **People & roster** (in System settings, admins only) — people seeded from commit
+  author emails, GitHub identity linking, manual entry, and an active/disabled switch
+  that gates login, tracking, and every future nudge. Unresolved GitHub logins surface
+  in the same table for one-click resolution.
+- **Settings** — profile, light/dark theme, and self-service GitHub account linking.
+- **Live sync** — a gap-fill job pulls GitHub every minute (and at boot), a reconcile
+  pass self-heals PRs that changed while Relay was offline, and every page shows the
+  last sync time with a manual refresh button.
+
 ## Layout
 
 ```
@@ -22,33 +43,43 @@ Tiltfile    runs backend + frontend locally
 
 | Module | Responsibility |
 |---|---|
-| `core/auth` | Google OAuth + JWT login, restricted to the apono.io domain. |
-| `infrastructure` | Logger and the GitHub client (read-only PAT locally, GitHub App when deployed). |
-| `domains/people` | Roster: email to github_login mapping, team, role. |
+| `core/auth` | Google OAuth + JWT login (apono.io only), person-backed roles, GitHub account linking. |
+| `core/rbac` | Permission constants and the `PermissionsGuard` (`resource:action`). |
+| `infrastructure` | Logger, sync-status, and the GitHub client (read-only PAT locally, GitHub App when deployed). |
+| `domains/people` | Roster: people, `github_identities` (one person, many logins), commit-email seeding, roster health. |
 | `domains/pull-requests` | `PullRequest` + `PrEvent` entities and the `PhaseComputer` (phases + per-round Reviewer/Author waits + waiting_on). |
 | `domains/ingestion` | `GithubEventNormalizer` (canonical event ids), `BackfillService`, and the webhook controller (deployed path). |
-| `domains/metrics` | Dashboard aggregation (median + p90 per wait round, cycle, SLA misses, quality guardrails). |
-| `scheduler` | `@nestjs/schedule` jobs: gap-fill (the local live mechanism) and metrics refresh. |
+| `domains/repos` | Watched repositories (add with GitHub validation) and per-repo area rules with private risk levels. |
+| `domains/assignment` | Deterministic reviewer-assignment engine (mastery from PR history, availability, fairness) recording quiet-phase suggestions. |
+| `domains/metrics` | Dashboard + analytics aggregation (median + p90 per wait round, cycle, weekly flow, quality guardrails). |
+| `scheduler` | `@nestjs/schedule` jobs: gap-fill every minute + boot (the local live mechanism, with a stale-PR reconcile pass), the assignment sweep every five minutes, and metrics refresh. |
 
 ## Local development
 
-Relay runs entirely on your laptop for Phase 1. It authenticates to GitHub with a
-read-only fine-grained personal access token (no GitHub App needed until deployment).
+Relay runs entirely on your laptop. It authenticates to GitHub with a read-only
+fine-grained personal access token (no GitHub App needed until deployment).
 
 1. Copy `.env.example` to `backend/.env` and fill in `GITHUB_PAT`, `GITHUB_REPOS`, and the
    Google OAuth values.
-2. Start Postgres (for example `docker run -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres`).
-3. Run `yarn install` at the root.
-4. Run `tilt up` (or `yarn dev`).
+2. Run `yarn install` at the root.
+3. Run `tilt up` (or `yarn dev`) — it starts Postgres in a container (host port 5433),
+   the backend, and the frontend.
+4. First run: `yarn backfill` then `yarn seed-people` in `backend/`.
 
-Backend: http://localhost:3000 — GraphQL playground at `/graphql`.
-Frontend: http://localhost:5173.
+Backend: http://localhost:3100 — GraphQL playground at `/graphql`.
+Frontend: http://localhost:5174.
+
+Everyone on the roster starts **disabled**; `ADMIN_EMAILS` bootstraps the first admin,
+who enables people from System settings → People.
 
 ## Status
 
-This is a scaffold. Entities, module wiring, auth, the GitHub client, and the job schedule
-are in place. The core logic (PhaseComputer, normalizer, backfill, gap-fill, metrics
-aggregation) is stubbed and throws `not implemented`. See `NEXT-STEPS.md` for the build
-order mapped to the Phase-1 spec tasks.
+Phase 1 (baseline + live pipeline + dashboard) is complete and validated against the
+DORA dashboard (≤10% gap). Large parts of Phase 2 landed too: the personal inbox
+(My PRs / My Reviews), people management with RBAC, and the analytics page. The smart
+assignment engine runs in its quiet phase: it records who it would pick for every
+reviewer-less PR and writes nothing to GitHub; admins compare its picks against what
+the team did from System settings. See `NEXT-STEPS.md` for the current state and the
+roadmap (assignment modes and triggers, Slack).
 
-The full design lives in the apono-mono spec set under `docs/plans/PR app SPEC/`.
+The full design lives in `docs/PR app SPEC/`.

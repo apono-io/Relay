@@ -378,12 +378,57 @@ describe('MetricsService.qualityTrend', () => {
   });
 });
 
+describe('MetricsService.weeklyFlow', () => {
+  it('returns a continuous window ending at the current week', () => {
+    const flow = MetricsService.weeklyFlow([], NOW, 4);
+    expect(flow).toHaveLength(4);
+    expect(flow[3].week).toBe(MetricsService.isoWeek(NOW));
+    expect(
+      flow.every((point) => point.opened === 0 && point.merged === 0),
+    ).toBe(true);
+  });
+
+  it('counts opened and merged PRs in their own weeks with cycle percentiles', () => {
+    const opened = new Date('2026-01-26T10:00:00Z');
+    const mergedAt = new Date('2026-01-30T10:00:00Z');
+    const flow = MetricsService.weeklyFlow(
+      [
+        pr({ openedAt: opened, state: PrState.OPEN }),
+        pr({
+          openedAt: opened,
+          state: PrState.MERGED,
+          mergedAt,
+          cycleTime: 3600,
+        }),
+        pr({
+          openedAt: new Date('2026-01-12T10:00:00Z'),
+          state: PrState.MERGED,
+          mergedAt,
+          cycleTime: 7200,
+        }),
+      ],
+      NOW,
+      4,
+    );
+    const lastFull = flow.find((point) => point.week === '2026-W05');
+    expect(lastFull?.opened).toBe(2);
+    expect(lastFull?.merged).toBe(2);
+    expect(lastFull?.cycleP50Seconds).toBe(5400);
+    const older = flow.find((point) => point.week === '2026-W03');
+    expect(older?.opened).toBe(1);
+    expect(older?.merged).toBe(0);
+    expect(older?.cycleP50Seconds).toBeUndefined();
+  });
+});
+
 describe('MetricsService.dashboard sync time', () => {
   function service(overrides: { syncedAt?: Date; latestEventAt?: Date } = {}) {
     const prRepo = { find: () => Promise.resolve([]) };
     const chain: any = {};
     chain.innerJoin = () => chain;
     chain.select = () => chain;
+    chain.addSelect = () => chain;
+    chain.distinct = () => chain;
     chain.where = () => chain;
     chain.andWhere = () => chain;
     chain.getRawMany = () => Promise.resolve([]);

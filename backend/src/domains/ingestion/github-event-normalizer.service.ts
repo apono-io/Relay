@@ -23,6 +23,7 @@ export type NormalizedPullRequest = {
   isDraft: boolean;
   isBot: boolean;
   isRevert: boolean;
+  filePaths: string[];
 };
 
 export type BackfillResult = {
@@ -232,6 +233,9 @@ export class GithubEventNormalizer {
       isDraft: !!prNode.isDraft,
       isBot: isBotLogin(authorLogin) || prNode.author?.__typename === 'Bot',
       isRevert: looksLikeRevert(prNode.title ?? ''),
+      filePaths: (prNode.files?.nodes ?? [])
+        .map((file: Record<string, any>) => file?.path)
+        .filter((path: unknown): path is string => typeof path === 'string'),
     };
 
     return { pullRequest, events };

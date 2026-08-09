@@ -8,6 +8,7 @@ import {
 } from './github-event-normalizer.service';
 import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entity';
+import { Repo } from '@/domains/repos/entities/repo.entity';
 import { PullRequestsService } from '@/domains/pull-requests/pull-requests.service';
 import { PrEventSource } from '@/domains/pull-requests/pr-enums';
 
@@ -17,11 +18,16 @@ export class PrIngestService {
     @InjectRepository(PrEvent) private readonly eventRepo: Repository<PrEvent>,
     @InjectRepository(PullRequest)
     private readonly prRepo: Repository<PullRequest>,
+    @InjectRepository(Repo) private readonly repoRepo: Repository<Repo>,
     private readonly pullRequests: PullRequestsService,
     private readonly configService: ConfigService,
   ) {}
 
-  repos(): string[] {
+  async repos(): Promise<string[]> {
+    const rows = await this.repoRepo.find({ order: { name: 'ASC' } });
+    if (rows.length > 0) {
+      return rows.map((row) => row.name);
+    }
     return (this.configService.get<string>('GITHUB_REPOS') || '')
       .split(',')
       .map((r) => r.trim())
@@ -46,6 +52,7 @@ export class PrIngestService {
       isDraft: header.isDraft,
       isBot: header.isBot,
       isRevert: header.isRevert,
+      filePaths: header.filePaths,
     });
     pr = await this.prRepo.save(pr);
 

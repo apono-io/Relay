@@ -15,14 +15,26 @@ export const DASHBOARD_QUERY = gql`
         p90Seconds
         sampleSize
       }
+      cycleTime {
+        label
+        medianSeconds
+        p90Seconds
+        sampleSize
+      }
       waitingCount
       lastSyncedAt
-      weeklyPhases {
+      weeklyFlow {
         week
-        codingSeconds
-        pickupSeconds
-        reworkSeconds
-        mergeSeconds
+        weekStart
+        opened
+        merged
+        cycleP50Seconds
+        cycleP90Seconds
+      }
+      qualityTrend {
+        week
+        approvedWithZeroCommentsRate
+        revertRate
         prCount
       }
       stuckNow {
@@ -34,6 +46,7 @@ export const DASHBOARD_QUERY = gql`
         waitingOn
         waitingSeconds
         requestedReviewers
+        reviewerLogins
         roundNumber
         openedAt
         readyAt

@@ -12,6 +12,7 @@ const PERSONAL_PR_FIELDS = gql`
     authorLogin
     waitingOn
     requestedReviewers
+    reviewerLogins
     openedAt
     readyAt
     firstReviewAt
@@ -40,7 +41,10 @@ export const MY_REVIEWS_QUERY = gql`
   query MyReviews {
     myReviews {
       logins
-      waiting {
+      open {
+        ...PersonalPrFields
+      }
+      recentlyMerged {
         ...PersonalPrFields
       }
     }

@@ -10,12 +10,17 @@ export enum Resource {
   PERSON = 'person',
   IDENTITY = 'identity',
   DASHBOARD = 'dashboard',
+  SETTINGS = 'settings',
+  ASSIGNMENT = 'assignment',
 }
 
 export enum Action {
   READ = 'read',
   WRITE = 'write',
   LINK = 'link',
+  ADMIN = 'admin',
+  WRITE_OWN = 'write-own',
+  TRIGGER = 'trigger',
 }
 
 export const Permissions = {
@@ -23,6 +28,9 @@ export const Permissions = {
   PERSON_WRITE: `${Resource.PERSON}:${Action.WRITE}`,
   IDENTITY_LINK: `${Resource.IDENTITY}:${Action.LINK}`,
   DASHBOARD_READ: `${Resource.DASHBOARD}:${Action.READ}`,
+  SETTINGS_ADMIN: `${Resource.SETTINGS}:${Action.ADMIN}`,
+  SETTINGS_WRITE_OWN: `${Resource.SETTINGS}:${Action.WRITE_OWN}`,
+  ASSIGNMENT_TRIGGER: `${Resource.ASSIGNMENT}:${Action.TRIGGER}`,
 } as const;
 
 const ROLE_PERMISSIONS: Record<Role, string[]> = {
@@ -31,6 +39,8 @@ const ROLE_PERMISSIONS: Record<Role, string[]> = {
     Permissions.DASHBOARD_READ,
     Permissions.PERSON_READ,
     Permissions.IDENTITY_LINK,
+    Permissions.SETTINGS_WRITE_OWN,
+    Permissions.ASSIGNMENT_TRIGGER,
   ],
   [Role.VIEWER]: [Permissions.DASHBOARD_READ],
 };

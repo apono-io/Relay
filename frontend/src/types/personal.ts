@@ -9,6 +9,7 @@ export type PersonalPr = {
   authorLogin: string;
   waitingOn: 'REVIEWER' | 'AUTHOR' | 'CI' | 'NONE';
   requestedReviewers: string[];
+  reviewerLogins: string[];
   openedAt: string | null;
   readyAt: string | null;
   firstReviewAt: string | null;
@@ -24,5 +25,6 @@ export type MyPullRequests = {
 
 export type MyReviews = {
   logins: string[];
-  waiting: PersonalPr[];
+  open: PersonalPr[];
+  recentlyMerged: PersonalPr[];
 };

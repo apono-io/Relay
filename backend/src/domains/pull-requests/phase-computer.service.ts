@@ -57,8 +57,17 @@ export class PhaseComputer {
     defaultSlaMinutes: number,
     botReviewers: Set<string> = new Set(),
   ): ComputedPhases {
-    const ordered = [...events].sort(
+    const sorted = [...events].sort(
       (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
+    );
+    const authorLogin = sorted
+      .find((e) => e.type === PrEventType.PR_OPENED)
+      ?.actorLogin?.toLowerCase();
+    const ordered = sorted.filter(
+      (e) =>
+        e.type !== PrEventType.REVIEW_SUBMITTED ||
+        (!isBotReviewer(e.actorLogin, botReviewers) &&
+          (!authorLogin || e.actorLogin?.toLowerCase() !== authorLogin)),
     );
 
     const openedAt = this.firstTime(ordered, PrEventType.PR_OPENED);
@@ -397,10 +406,13 @@ export class PhaseComputer {
   private finalRequestedReviewers(events: PrEvent[]): string[] {
     const set = new Set<string>();
     for (const e of events) {
-      const reviewer = (e.payload?.reviewer as string) || e.actorLogin;
-      if (e.type === PrEventType.REVIEW_REQUESTED && reviewer) {
+      const reviewer = e.payload?.reviewer as string | undefined;
+      if (!reviewer || reviewer === 'unknown') {
+        continue;
+      }
+      if (e.type === PrEventType.REVIEW_REQUESTED) {
         set.add(reviewer);
-      } else if (e.type === PrEventType.REVIEW_REQUEST_REMOVED && reviewer) {
+      } else if (e.type === PrEventType.REVIEW_REQUEST_REMOVED) {
         set.delete(reviewer);
       }
     }

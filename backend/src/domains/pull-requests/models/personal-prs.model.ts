@@ -19,5 +19,8 @@ export class MyReviews {
   logins: string[];
 
   @Field(() => [PullRequest])
-  waiting: PullRequest[];
+  open: PullRequest[];
+
+  @Field(() => [PullRequest])
+  recentlyMerged: PullRequest[];
 }

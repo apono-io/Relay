@@ -70,7 +70,7 @@ export class GapFillJob implements OnModuleInit {
       this.configService.get('GAP_FILL_LOOKBACK_HOURS') ?? 24,
     );
     const cutoff = subHours(now, lookbackHours);
-    const repos = this.ingest.repos();
+    const repos = await this.ingest.repos();
 
     const summary: GapFillSummary = {
       reposProcessed: 0,

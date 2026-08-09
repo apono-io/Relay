@@ -52,18 +52,18 @@ export class AuthController {
     @Res() res: Response,
   ): Promise<void> {
     if (!code || !state) {
-      res.redirect(`${this.frontendOrigin()}/people?link=failed`);
+      res.redirect(`${this.frontendOrigin()}/settings?link=failed`);
       return;
     }
     try {
       const { login } = await this.githubLinkService.completeLink(code, state);
       res.redirect(
-        `${this.frontendOrigin()}/people?link=${encodeURIComponent(login)}`,
+        `${this.frontendOrigin()}/settings?link=${encodeURIComponent(login)}`,
       );
     } catch (error) {
       const reason = encodeURIComponent((error as Error).message);
       res.redirect(
-        `${this.frontendOrigin()}/people?link=failed&reason=${reason}`,
+        `${this.frontendOrigin()}/settings?link=failed&reason=${reason}`,
       );
     }
   }

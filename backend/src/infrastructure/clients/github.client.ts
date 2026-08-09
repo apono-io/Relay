@@ -19,6 +19,9 @@ fragment PrTimelineNode on PullRequest {
   closedAt
   author { login __typename }
   mergedBy { login }
+  files(first: 100) {
+    nodes { path }
+  }
   commits(last: 100) {
     nodes {
       commit {
@@ -150,6 +153,102 @@ ${PR_NODE_FRAGMENT}`;
       .filter((node) => node != null);
   }
 
+  async verifyRepoAccess(repo: string): Promise<void> {
+    const [owner, name] = repo.split('/');
+    if (!owner || !name) {
+      throw new Error('Use the owner/name form, for example apono-io/Relay.');
+    }
+    try {
+      const data = await this.graphql<{ repository: { id: string } | null }>(
+        `query VerifyRepo($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) { id }
+        }`,
+        { owner, name },
+      );
+      if (!data.repository) {
+        throw new Error('NOT_FOUND');
+      }
+    } catch (error) {
+      const message = (error as Error).message;
+      if (
+        message.includes('NOT_FOUND') ||
+        message.includes('Could not resolve')
+      ) {
+        throw new Error(
+          `GitHub cannot find ${repo} with the configured credentials — check the name and the token's repository access.`,
+        );
+      }
+      throw new Error(`GitHub rejected the check for ${repo}: ${message}`);
+    }
+  }
+
+  async fetchTopLevelDirs(repo: string): Promise<string[]> {
+    const [owner, name] = repo.split('/');
+    const data = await this.graphql<{
+      repository: {
+        object: { entries?: { name: string; type: string }[] } | null;
+      };
+    }>(
+      `query TopLevelDirs($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          object(expression: "HEAD:") {
+            ... on Tree { entries { name type } }
+          }
+        }
+      }`,
+      { owner, name },
+    );
+    return (data.repository.object?.entries ?? [])
+      .filter((entry) => entry.type === 'tree')
+      .map((entry) => entry.name);
+  }
+
+  async requestReviewers(
+    repo: string,
+    prNumber: number,
+    logins: string[],
+  ): Promise<void> {
+    try {
+      await this.rest(
+        'post',
+        `/repos/${repo}/pulls/${prNumber}/requested_reviewers`,
+        {
+          reviewers: logins,
+        },
+      );
+    } catch (error) {
+      const detail =
+        (error as { response?: { data?: { message?: string } } }).response?.data
+          ?.message ?? (error as Error).message;
+      throw new Error(
+        `GitHub refused the reviewer request for ${repo}#${prNumber}: ${detail}`,
+      );
+    }
+  }
+
+  async removeRequestedReviewers(
+    repo: string,
+    prNumber: number,
+    logins: string[],
+  ): Promise<void> {
+    try {
+      await this.rest(
+        'delete',
+        `/repos/${repo}/pulls/${prNumber}/requested_reviewers`,
+        {
+          reviewers: logins,
+        },
+      );
+    } catch (error) {
+      const detail =
+        (error as { response?: { data?: { message?: string } } }).response?.data
+          ?.message ?? (error as Error).message;
+      throw new Error(
+        `GitHub refused removing the reviewer request for ${repo}#${prNumber}: ${detail}`,
+      );
+    }
+  }
+
   async graphql<T = any>(
     query: string,
     variables: Record<string, unknown> = {},
@@ -175,7 +274,7 @@ ${PR_NODE_FRAGMENT}`;
   }
 
   async rest<T = any>(
-    method: 'get' | 'post',
+    method: 'get' | 'post' | 'delete',
     path: string,
     body?: unknown,
   ): Promise<T> {

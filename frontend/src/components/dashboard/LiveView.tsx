@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery } from '@apollo/client';
 import {
+  Alert,
   Box,
+  Button,
   Card,
-  Collapse,
   IconButton,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -16,19 +19,30 @@ import {
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
-import PersonSearchRoundedIcon from '@mui/icons-material/PersonSearchRounded';
+import PersonAddAltRoundedIcon from '@mui/icons-material/PersonAddAltRounded';
 import AutorenewRoundedIcon from '@mui/icons-material/AutorenewRounded';
 import type { DashboardSummary, StuckPr } from '@/types/dashboard';
+import type { RelayAssignment } from '@/types/assignment';
+import { ASSIGN_REVIEWER, RELAY_ASSIGNMENTS_QUERY } from '@/graphql/assignment';
 import { formatDuration } from '@/lib/format';
 import { ZoneSection } from './ZoneSection';
 import {
+  ApprovedChip,
   DevAvatar,
   PrStateIcon,
-  ReviewerAvatars,
+  ReviewPair,
   SoftChip,
   chipToneColor,
 } from '@/components/shared/pr-visuals';
+import {
+  AssignmentControls,
+  RelayAssignmentPair,
+} from '@/components/shared/RelayAssignmentPair';
 import { PrTimeline } from '@/components/shared/PrTimeline';
+
+export function prKey(pr: { repo: string; number: number }): string {
+  return `${pr.repo}#${pr.number}`;
+}
 
 const STALL_THRESHOLD_SECONDS = 7 * 86400;
 const LONG_WAIT_SECONDS = 3 * 86400;
@@ -44,42 +58,164 @@ function waitingBucket(pr: StuckPr): number {
   return pr.waitingOn === 'author' ? 2 : 3;
 }
 
-function WaitingOnCell({ pr }: { pr: StuckPr }) {
-  if (pr.waitingOn === 'reviewer') {
-    if (pr.requestedReviewers.length === 0) {
-      return (
-        <SoftChip
-          label="Needs a reviewer"
-          tone="amber"
-          icon={<PersonSearchRoundedIcon />}
-        />
-      );
-    }
+function WaitingSlots({ who, status }: { who?: React.ReactNode; status?: React.ReactNode }) {
+  if (!who || !status) {
     return (
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-        <ReviewerAvatars logins={pr.requestedReviewers} />
-        <Typography variant="body2" noWrap>
-          {pr.requestedReviewers.join(', ')}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-          to review
-        </Typography>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="center"
+        sx={{ width: 340, maxWidth: '100%', mx: 'auto' }}
+      >
+        {who ?? status}
       </Stack>
     );
   }
-  if (pr.waitingOn === 'ci') {
-    return <SoftChip label="CI checks" tone="gray" icon={<AutorenewRoundedIcon />} />;
-  }
   return (
-    <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
-      <DevAvatar login={pr.authorLogin} size={22} />
-      <Typography variant="body2" noWrap>
-        {pr.authorLogin}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-        to update
-      </Typography>
+    <Stack direction="row" alignItems="center" sx={{ width: 340, maxWidth: '100%', mx: 'auto' }}>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="center"
+        sx={{ minWidth: 210, flexShrink: 0 }}
+      >
+        {who}
+      </Stack>
+      <Stack
+        direction="row"
+        alignItems="center"
+        justifyContent="center"
+        sx={{ flexGrow: 1, flexShrink: 0, minWidth: 0 }}
+      >
+        {status}
+      </Stack>
     </Stack>
+  );
+}
+
+function StatusCaption({ text }: { text: string }) {
+  return (
+    <Typography variant="caption" color="text.secondary" noWrap>
+      {text}
+    </Typography>
+  );
+}
+
+function WaitingOnCell({
+  pr,
+  assignment,
+  onAssign,
+  assigning,
+  onAssignmentsChanged,
+  onAssignmentError,
+}: {
+  pr: StuckPr;
+  assignment?: RelayAssignment;
+  onAssign: (pr: StuckPr) => void;
+  assigning: boolean;
+  onAssignmentsChanged: () => void;
+  onAssignmentError: (message: string) => void;
+}) {
+  if (pr.approvedAt) {
+    return (
+      <WaitingSlots
+        who={
+          pr.reviewerLogins.length > 0 ? (
+            <ReviewPair
+              reviewers={pr.reviewerLogins.map((login) => ({ login }))}
+              authorLogin={pr.authorLogin}
+            />
+          ) : undefined
+        }
+        status={<ApprovedChip />}
+      />
+    );
+  }
+
+  if (pr.waitingOn === 'ci') {
+    return (
+      <WaitingSlots
+        status={<SoftChip label="CI checks" tone="gray" icon={<AutorenewRoundedIcon />} />}
+      />
+    );
+  }
+
+  const reviewers =
+    pr.requestedReviewers.length > 0 ? pr.requestedReviewers : pr.reviewerLogins;
+  if (reviewers.length > 0) {
+    return (
+      <WaitingSlots
+        who={
+          <ReviewPair
+            reviewers={reviewers.map((login) => ({ login }))}
+            authorLogin={pr.authorLogin}
+          />
+        }
+        status={
+          <StatusCaption
+            text={
+              pr.waitingOn === 'reviewer'
+                ? reviewers.length > 1
+                  ? "reviewers' turn"
+                  : `${reviewers[0]}'s turn`
+                : `${pr.authorLogin}'s turn`
+            }
+          />
+        }
+      />
+    );
+  }
+
+  if (assignment) {
+    return (
+      <WaitingSlots
+        who={<RelayAssignmentPair assignment={assignment} authorLogin={pr.authorLogin} />}
+        status={
+          <AssignmentControls
+            assignment={assignment}
+            onChanged={onAssignmentsChanged}
+            onError={onAssignmentError}
+          />
+        }
+      />
+    );
+  }
+
+  if (pr.waitingOn === 'reviewer') {
+    return (
+      <WaitingSlots
+        who={
+          <Button
+            size="small"
+            variant="outlined"
+            color="primary"
+            startIcon={<PersonAddAltRoundedIcon sx={{ fontSize: 15 }} />}
+            disabled={assigning}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAssign(pr);
+            }}
+            sx={{ whiteSpace: 'nowrap', py: 0.25, fontSize: 12.5 }}
+          >
+            {assigning ? 'Picking…' : 'Assign reviewer'}
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <WaitingSlots
+      who={
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+          <DevAvatar login={pr.authorLogin} size={22} />
+          <Typography variant="body2" noWrap>
+            {pr.authorLogin}
+          </Typography>
+        </Stack>
+      }
+      status={<StatusCaption text={`${pr.authorLogin}'s turn`} />}
+    />
   );
 }
 
@@ -101,21 +237,31 @@ function WaitCell({ pr }: { pr: StuckPr }) {
   );
 }
 
+type AssignProps = {
+  assignments: Map<string, RelayAssignment>;
+  onAssign: (pr: StuckPr) => void;
+  assigningKey: string | null;
+  onAssignmentsChanged: () => void;
+  onAssignmentError: (message: string) => void;
+};
+
 function PrRow({
   pr,
   expanded,
   onToggle,
+  assign,
 }: {
   pr: StuckPr;
   expanded: boolean;
   onToggle: () => void;
+  assign: AssignProps;
 }) {
   return (
     <>
       <TableRow
         hover
         onClick={onToggle}
-        sx={{ cursor: 'pointer', '& td': expanded ? { border: 0 } : undefined }}
+        sx={{ cursor: 'pointer', '& td': expanded ? { borderBottom: 0 } : undefined }}
       >
         <TableCell>
           <Stack direction="row" alignItems="center" spacing={1.5} sx={{ minWidth: 0 }}>
@@ -137,9 +283,18 @@ function PrRow({
           </Stack>
         </TableCell>
         <TableCell>
-          <WaitingOnCell pr={pr} />
+          <Box sx={{ height: 44, display: 'flex', alignItems: 'center' }}>
+            <WaitingOnCell
+              pr={pr}
+              assignment={assign.assignments.get(prKey(pr))}
+              onAssign={assign.onAssign}
+              assigning={assign.assigningKey === prKey(pr)}
+              onAssignmentsChanged={assign.onAssignmentsChanged}
+              onAssignmentError={assign.onAssignmentError}
+            />
+          </Box>
         </TableCell>
-        <TableCell align="right">
+        <TableCell align="center">
           <WaitCell pr={pr} />
         </TableCell>
         <TableCell align="right">
@@ -166,9 +321,9 @@ function PrRow({
           </Stack>
         </TableCell>
       </TableRow>
-      <TableRow>
-        <TableCell colSpan={4} sx={{ p: 0, border: expanded ? undefined : 0 }}>
-          <Collapse in={expanded} unmountOnExit>
+      {expanded && (
+        <TableRow>
+          <TableCell colSpan={4} className="relay-detail-cell">
             <Box
               sx={(theme) => ({
                 px: 3,
@@ -178,9 +333,9 @@ function PrRow({
             >
               <PrTimeline pr={{ ...pr, mergedAt: null }} />
             </Box>
-          </Collapse>
-        </TableCell>
-      </TableRow>
+          </TableCell>
+        </TableRow>
+      )}
     </>
   );
 }
@@ -189,10 +344,12 @@ function PrTable({
   items,
   expandedKey,
   onToggleRow,
+  assign,
 }: {
   items: StuckPr[];
   expandedKey: string | null;
   onToggleRow: (key: string) => void;
+  assign: AssignProps;
 }) {
   return (
     <Card>
@@ -200,9 +357,11 @@ function PrTable({
         size="small"
         sx={{
           tableLayout: 'fixed',
-          '& td, & th': { px: 2.5, py: 1.5, borderColor: 'divider' },
-          '& tbody tr:last-child td': { border: 0 },
+          '& td, & th': { px: 2.5, py: 1.25, borderColor: 'divider' },
+          '& td.relay-detail-cell': { p: 0 },
+          '& tbody tr:last-child td': { borderBottom: 0 },
           '& thead th': {
+            py: 1,
             bgcolor: (theme) => alpha(theme.palette.text.primary, 0.02),
             color: 'text.secondary',
             textTransform: 'uppercase',
@@ -215,8 +374,10 @@ function PrTable({
         <TableHead>
           <TableRow>
             <TableCell>Pull request</TableCell>
-            <TableCell sx={{ width: 260 }}>Waiting on</TableCell>
-            <TableCell align="right" sx={{ width: 80 }}>
+            <TableCell align="center" sx={{ width: 400 }}>
+              Waiting on
+            </TableCell>
+            <TableCell align="center" sx={{ width: 80 }}>
               For
             </TableCell>
             <TableCell sx={{ width: 84 }} />
@@ -224,13 +385,14 @@ function PrTable({
         </TableHead>
         <TableBody>
           {items.map((pr) => {
-            const key = `${pr.repo}#${pr.number}`;
+            const key = prKey(pr);
             return (
               <PrRow
                 key={key}
                 pr={pr}
                 expanded={expandedKey === key}
                 onToggle={() => onToggleRow(key)}
+                assign={assign}
               />
             );
           })}
@@ -245,6 +407,45 @@ type Section = 'needs-reviewer' | 'in-progress' | 'stalled';
 export function LiveView({ summary }: { summary: DashboardSummary }) {
   const [openSection, setOpenSection] = useState<Section | null>('needs-reviewer');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+  const [assigningKey, setAssigningKey] = useState<string | null>(null);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [justAssigned, setJustAssigned] = useState<Set<string>>(new Set());
+
+  const assignmentsQuery = useQuery<{ relayAssignments: RelayAssignment[] }>(
+    RELAY_ASSIGNMENTS_QUERY,
+    { pollInterval: 60_000 },
+  );
+  const assignments = useMemo(
+    () =>
+      new Map(
+        (assignmentsQuery.data?.relayAssignments ?? []).map((assignment) => [
+          prKey(assignment),
+          assignment,
+        ]),
+      ),
+    [assignmentsQuery.data],
+  );
+  const [assignReviewer] = useMutation(ASSIGN_REVIEWER);
+
+  const onAssign = (pr: StuckPr) => {
+    const key = prKey(pr);
+    setAssigningKey(key);
+    setAssignError(null);
+    void assignReviewer({ variables: { repo: pr.repo, number: pr.number } })
+      .then(() => {
+        setJustAssigned((current) => new Set(current).add(key));
+        return assignmentsQuery.refetch();
+      })
+      .catch((error: Error) => setAssignError(error.message))
+      .finally(() => setAssigningKey(null));
+  };
+  const assign: AssignProps = {
+    assignments,
+    onAssign,
+    assigningKey,
+    onAssignmentsChanged: () => void assignmentsQuery.refetch(),
+    onAssignmentError: setAssignError,
+  };
 
   const toggleSection = (section: Section) =>
     setOpenSection((current) => (current === section ? null : section));
@@ -255,11 +456,15 @@ export function LiveView({ summary }: { summary: DashboardSummary }) {
   const stalled = summary.stuckNow.filter((pr) => pr.waitingSeconds > STALL_THRESHOLD_SECONDS);
 
   const byWait = (a: StuckPr, b: StuckPr) => b.waitingSeconds - a.waitingSeconds;
+  const hasReviewer = (pr: StuckPr) =>
+    pr.requestedReviewers.length > 0 ||
+    pr.reviewerLogins.length > 0 ||
+    (assignments.has(prKey(pr)) && !justAssigned.has(prKey(pr)));
   const needsReviewer = active
-    .filter((pr) => pr.waitingOn === 'reviewer' && pr.requestedReviewers.length === 0)
+    .filter((pr) => pr.waitingOn === 'reviewer' && !hasReviewer(pr))
     .sort(byWait);
   const inProgress = active
-    .filter((pr) => pr.waitingOn !== 'reviewer' || pr.requestedReviewers.length > 0)
+    .filter((pr) => pr.waitingOn !== 'reviewer' || hasReviewer(pr))
     .sort((a, b) => {
       const bucket = waitingBucket(a) - waitingBucket(b);
       return bucket !== 0 ? bucket : byWait(a, b);
@@ -287,7 +492,12 @@ export function LiveView({ summary }: { summary: DashboardSummary }) {
             </Stack>
           </Card>
         ) : (
-          <PrTable items={needsReviewer} expandedKey={expandedRow} onToggleRow={toggleRow} />
+          <PrTable
+            items={needsReviewer}
+            expandedKey={expandedRow}
+            onToggleRow={toggleRow}
+            assign={assign}
+          />
         )}
       </ZoneSection>
 
@@ -300,7 +510,12 @@ export function LiveView({ summary }: { summary: DashboardSummary }) {
           expanded={openSection === 'in-progress'}
           onToggle={() => toggleSection('in-progress')}
         >
-          <PrTable items={inProgress} expandedKey={expandedRow} onToggleRow={toggleRow} />
+          <PrTable
+            items={inProgress}
+            expandedKey={expandedRow}
+            onToggleRow={toggleRow}
+            assign={assign}
+          />
         </ZoneSection>
       )}
 
@@ -313,9 +528,25 @@ export function LiveView({ summary }: { summary: DashboardSummary }) {
           expanded={openSection === 'stalled'}
           onToggle={() => toggleSection('stalled')}
         >
-          <PrTable items={stalled} expandedKey={expandedRow} onToggleRow={toggleRow} />
+          <PrTable
+            items={stalled}
+            expandedKey={expandedRow}
+            onToggleRow={toggleRow}
+            assign={assign}
+          />
         </ZoneSection>
       )}
+
+      <Snackbar
+        open={assignError !== null}
+        autoHideDuration={6000}
+        onClose={() => setAssignError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" variant="filled" onClose={() => setAssignError(null)}>
+          {assignError}
+        </Alert>
+      </Snackbar>
     </Stack>
   );
 }

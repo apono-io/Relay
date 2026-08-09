@@ -4,8 +4,8 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { PullRequest } from './entities/pull-request.entity';
 import { PrEvent } from './entities/pr-event.entity';
-import { PhaseComputer } from './phase-computer.service';
-import { WaitingOn, PrState } from './pr-enums';
+import { PhaseComputer, isBotReviewer } from './phase-computer.service';
+import { WaitingOn, PrState, PrEventType } from './pr-enums';
 
 @Injectable()
 export class PullRequestsService {
@@ -41,6 +41,7 @@ export class PullRequestsService {
     return this.prRepo
       .createQueryBuilder('pr')
       .where('pr.state = :state', { state: PrState.OPEN })
+      .andWhere('pr."isDraft" = false')
       .andWhere('LOWER(pr."authorLogin") = ANY(:logins)', {
         logins: lowered(logins),
       })
@@ -77,27 +78,71 @@ export class PullRequestsService {
     return rows.map((row) => Number(row.number));
   }
 
-  findAwaitingReviewBy(logins: string[]): Promise<PullRequest[]> {
+  findOpenReviewedBy(logins: string[]): Promise<PullRequest[]> {
     if (logins.length === 0) {
       return Promise.resolve([]);
     }
-    return this.prRepo
-      .createQueryBuilder('pr')
-      .where('pr.state = :state', { state: PrState.OPEN })
+    return this.reviewerInvolvementQuery(logins)
+      .andWhere('pr.state = :state', { state: PrState.OPEN })
       .andWhere('pr."isDraft" = false')
-      .andWhere(
-        'EXISTS (SELECT 1 FROM unnest(pr."requestedReviewers") reviewer WHERE LOWER(reviewer) = ANY(:logins))',
-        { logins: lowered(logins) },
-      )
       .orderBy('pr."openedAt"', 'ASC', 'NULLS LAST')
       .getMany();
+  }
+
+  findRecentlyMergedReviewedBy(
+    logins: string[],
+    since: Date,
+  ): Promise<PullRequest[]> {
+    if (logins.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.reviewerInvolvementQuery(logins)
+      .andWhere('pr.state = :state', { state: PrState.MERGED })
+      .andWhere('pr."mergedAt" >= :since', { since })
+      .orderBy('pr."mergedAt"', 'DESC')
+      .getMany();
+  }
+
+  private reviewerInvolvementQuery(logins: string[]) {
+    return this.prRepo
+      .createQueryBuilder('pr')
+      .where('LOWER(pr."authorLogin") != ALL(:logins)', {
+        logins: lowered(logins),
+      })
+      .andWhere(
+        `(EXISTS (SELECT 1 FROM unnest(pr."requestedReviewers") reviewer WHERE LOWER(reviewer) = ANY(:logins))
+          OR EXISTS (SELECT 1 FROM pr_events event WHERE event."prId" = pr.id AND event.type = :reviewType AND LOWER(event."actorLogin") = ANY(:logins)))`,
+        { logins: lowered(logins), reviewType: PrEventType.REVIEW_SUBMITTED },
+      );
+  }
+
+  async humanReviewerLogins(
+    prId: string,
+    authorLogin: string,
+  ): Promise<string[]> {
+    const rows = await this.eventRepo
+      .createQueryBuilder('event')
+      .select('event.actorLogin', 'actorLogin')
+      .distinct(true)
+      .where('event."prId" = :prId', { prId })
+      .andWhere('event.type = :type', { type: PrEventType.REVIEW_SUBMITTED })
+      .andWhere('event."actorLogin" IS NOT NULL')
+      .getRawMany<{ actorLogin: string }>();
+    const bots = this.botReviewers();
+    const author = authorLogin.toLowerCase();
+    return rows
+      .map((row) => row.actorLogin)
+      .filter(
+        (login) =>
+          !isBotReviewer(login, bots) && login.toLowerCase() !== author,
+      );
   }
 
   private botReviewers(): Set<string> {
     return new Set(
       (
         this.configService.get<string>('GITHUB_BOT_REVIEWERS') ??
-        'github-code-quality,claude'
+        'github-code-quality,claude,copilot-pull-request-reviewer'
       )
         .split(',')
         .map((r) => r.trim().toLowerCase())

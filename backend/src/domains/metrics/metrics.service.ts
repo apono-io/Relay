@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { format } from 'date-fns';
+import { format, startOfISOWeek, subWeeks } from 'date-fns';
 import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entity';
 import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { isBotReviewer } from '@/domains/pull-requests/phase-computer.service';
@@ -17,11 +17,13 @@ import {
   ReviewerLoad,
   StuckPr,
   WaitMetric,
+  WeeklyFlowPoint,
   WeeklyPhasePoint,
   WeeklyQualityPoint,
 } from './models/dashboard.model';
 
 const MAX_ROUNDS = 5;
+const FLOW_WEEKS = 12;
 
 @Injectable()
 export class MetricsService {
@@ -45,11 +47,15 @@ export class MetricsService {
     const botReviewers = new Set(
       (
         this.configService.get<string>('GITHUB_BOT_REVIEWERS') ??
-        'github-code-quality,claude'
+        'github-code-quality,claude,copilot-pull-request-reviewer'
       )
         .split(',')
         .map((login) => login.trim().toLowerCase())
         .filter(Boolean),
+    );
+    const reviewActorsByPrId = await this.reviewActorsByOpenPr(
+      botReviewers,
+      repo,
     );
     const summary = MetricsService.buildSummary(
       prs,
@@ -57,6 +63,7 @@ export class MetricsService {
       reviewerLogins,
       slaMinutes,
       botReviewers,
+      reviewActorsByPrId,
     );
     summary.lastSyncedAt =
       this.syncStatus.lastSyncedAt ?? (await this.latestIngestedAt());
@@ -73,6 +80,38 @@ export class MetricsService {
       take: 1,
     });
     return latest?.createdAt ?? null;
+  }
+
+  private async reviewActorsByOpenPr(
+    botReviewers: Set<string>,
+    repo?: string,
+  ): Promise<Map<string, string[]>> {
+    const query = this.eventRepo
+      .createQueryBuilder('event')
+      .innerJoin(PullRequest, 'pr', 'pr.id = event.prId')
+      .select('event.prId', 'prId')
+      .addSelect('event.actorLogin', 'actorLogin')
+      .distinct(true)
+      .where('event.type = :type', { type: PrEventType.REVIEW_SUBMITTED })
+      .andWhere('event.actorLogin IS NOT NULL')
+      .andWhere('LOWER(event."actorLogin") != LOWER(pr."authorLogin")')
+      .andWhere('pr.state = :state', { state: PrState.OPEN });
+    if (repo) {
+      query.andWhere('pr.repo = :repo', { repo });
+    }
+    const rows = await query.getRawMany<{ prId: string; actorLogin: string }>();
+    const byPr = new Map<string, string[]>();
+    for (const row of rows) {
+      if (isBotReviewer(row.actorLogin, botReviewers)) {
+        continue;
+      }
+      const logins = byPr.get(row.prId) ?? [];
+      if (!logins.includes(row.actorLogin)) {
+        logins.push(row.actorLogin);
+      }
+      byPr.set(row.prId, logins);
+    }
+    return byPr;
   }
 
   private async reviewerLogins(repo?: string): Promise<string[]> {
@@ -119,6 +158,7 @@ export class MetricsService {
     reviewerLogins: string[] = [],
     slaMinutes = 120,
     botReviewers: Set<string> = new Set(),
+    reviewActorsByPrId: Map<string, string[]> = new Map(),
   ): DashboardSummary {
     const eligible = allPrs.filter((pr) => !pr.isBot && !pr.isRevert);
 
@@ -182,11 +222,51 @@ export class MetricsService {
       waitingCount,
       quality: { approvedWithZeroCommentsRate, revertRate },
       weeklyPhases: MetricsService.weeklyPhases(eligible),
-      stuckNow: MetricsService.stuckNow(allPrs, now, slaMinutes),
+      stuckNow: MetricsService.stuckNow(
+        allPrs,
+        now,
+        slaMinutes,
+        reviewActorsByPrId,
+      ),
       fairness: MetricsService.fairness(reviewerLogins, botReviewers),
       qualityTrend: MetricsService.qualityTrend(allPrs),
+      weeklyFlow: MetricsService.weeklyFlow(eligible, now),
       lastSyncedAt: null,
     };
+  }
+
+  static weeklyFlow(
+    prs: PullRequest[],
+    now: Date,
+    weeks = FLOW_WEEKS,
+  ): WeeklyFlowPoint[] {
+    const openedByWeek = MetricsService.groupBy(
+      prs.filter((pr) => pr.openedAt != null),
+      (pr) => MetricsService.isoWeek(pr.openedAt as Date),
+    );
+    const mergedByWeek = MetricsService.groupBy(
+      prs.filter((pr) => pr.state === PrState.MERGED && pr.mergedAt != null),
+      (pr) => MetricsService.isoWeek(pr.mergedAt as Date),
+    );
+
+    const points: WeeklyFlowPoint[] = [];
+    for (let i = weeks - 1; i >= 0; i -= 1) {
+      const ref = subWeeks(now, i);
+      const week = MetricsService.isoWeek(ref);
+      const mergedGroup = mergedByWeek.get(week) ?? [];
+      const cycles = mergedGroup
+        .map((pr) => pr.cycleTime)
+        .filter((v): v is number => v != null);
+      points.push({
+        week,
+        weekStart: startOfISOWeek(ref),
+        opened: openedByWeek.get(week)?.length ?? 0,
+        merged: mergedGroup.length,
+        cycleP50Seconds: MetricsService.percentile(cycles, 0.5) ?? undefined,
+        cycleP90Seconds: MetricsService.percentile(cycles, 0.9) ?? undefined,
+      });
+    }
+    return points;
   }
 
   static weeklyPhases(prs: PullRequest[]): WeeklyPhasePoint[] {
@@ -228,6 +308,7 @@ export class MetricsService {
     allPrs: PullRequest[],
     now: Date,
     slaMinutes = 120,
+    reviewActorsByPrId: Map<string, string[]> = new Map(),
   ): StuckPr[] {
     return allPrs
       .filter(
@@ -246,6 +327,7 @@ export class MetricsService {
         waitingOn: pr.waitingOn,
         waitingSeconds: MetricsService.currentWaitSeconds(pr, now, slaMinutes),
         requestedReviewers: pr.requestedReviewers ?? [],
+        reviewerLogins: reviewActorsByPrId.get(pr.id) ?? [],
         slaBreached: pr.reviewDueAt != null && pr.reviewDueAt < now,
         roundNumber: pr.waitRounds?.length || 1,
         dueInSeconds:

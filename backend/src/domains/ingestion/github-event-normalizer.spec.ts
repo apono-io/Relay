@@ -117,6 +117,30 @@ describe('GithubEventNormalizer', () => {
       expect(bot.pullRequest.isBot).toBe(true);
       expect(bot.pullRequest.isRevert).toBe(true);
     });
+
+    it('extracts the file paths the PR touches', () => {
+      const result = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({
+          files: {
+            nodes: [
+              { path: 'frontend/src/App.tsx' },
+              { path: 'backend/src/main.ts' },
+              { path: null },
+            ],
+          },
+        }),
+      );
+      expect(result.pullRequest.filePaths).toEqual([
+        'frontend/src/App.tsx',
+        'backend/src/main.ts',
+      ]);
+    });
+
+    it('defaults file paths to an empty list when the node has none', () => {
+      const result = normalizer.normalizeBackfillNode(REPO, backfillNode());
+      expect(result.pullRequest.filePaths).toEqual([]);
+    });
   });
 
   describe('webhook mapping', () => {

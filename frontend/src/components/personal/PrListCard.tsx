@@ -23,7 +23,7 @@ const WAITING_CHIPS: Record<
   PersonalPr['waitingOn'],
   { label: string; tone: ChipTone; icon: ReactElement }
 > = {
-  REVIEWER: { label: 'With reviewer', tone: 'teal', icon: <VisibilityOutlinedIcon /> },
+  REVIEWER: { label: 'With reviewer', tone: 'blue', icon: <VisibilityOutlinedIcon /> },
   AUTHOR: { label: 'Your turn', tone: 'amber', icon: <EditRoundedIcon /> },
   CI: { label: 'CI running', tone: 'gray', icon: <AutorenewRoundedIcon /> },
   NONE: { label: 'Up to date', tone: 'green', icon: <CheckRoundedIcon /> },
@@ -49,21 +49,51 @@ export function WaitingChip({ pr, reverseAudience }: { pr: PersonalPr; reverseAu
     chip = { label: 'Your review', tone: 'amber', icon: <RateReviewOutlinedIcon /> };
   }
   if (reverseAudience && pr.waitingOn === 'AUTHOR') {
-    chip = { label: 'With the author', tone: 'teal', icon: <EditRoundedIcon /> };
+    chip = { label: 'With the author', tone: 'gray', icon: <EditRoundedIcon /> };
   }
   return <SoftChip label={chip.label} tone={chip.tone} icon={chip.icon} />;
+}
+
+function RowColumn({
+  width,
+  expand = false,
+  justify = 'center',
+  children,
+}: {
+  width: number;
+  expand?: boolean;
+  justify?: 'center' | 'flex-end';
+  children?: ReactNode;
+}) {
+  return (
+    <Stack
+      direction="row"
+      alignItems="center"
+      justifyContent={justify}
+      sx={{
+        ...(expand ? { minWidth: width } : { width, minWidth: 0 }),
+        flexShrink: 0,
+        px: 2,
+        py: 1.25,
+      }}
+    >
+      {children}
+    </Stack>
+  );
 }
 
 export function PrRow({
   pr,
   meta,
-  trailing,
+  reviewer,
+  status,
   expanded,
   onToggle,
 }: {
   pr: PersonalPr;
   meta?: ReactNode;
-  trailing?: ReactNode;
+  reviewer?: ReactNode;
+  status?: ReactNode;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -78,12 +108,10 @@ export function PrRow({
     >
       <Stack
         direction="row"
-        alignItems="center"
-        spacing={1.75}
+        alignItems="stretch"
         onClick={onToggle}
         sx={{
-          px: 2.5,
-          py: 1.75,
+          minHeight: 64,
           cursor: 'pointer',
           userSelect: 'none',
           '&:hover': {
@@ -91,44 +119,56 @@ export function PrRow({
           },
         }}
       >
-        <PrStateIcon state={state} sx={{ flexShrink: 0 }} />
-        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-          <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
-            {pr.title}
-          </Typography>
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={0.75}
-            sx={{ mt: 0.25, minWidth: 0, color: 'text.secondary' }}
-          >
-            <Typography variant="caption" noWrap component="div" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
-              {meta ?? defaultMeta(pr)}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.75}
+          sx={{ flexGrow: 1, minWidth: 0, px: 2.5, py: 1.25 }}
+        >
+          <PrStateIcon state={state} sx={{ flexShrink: 0 }} />
+          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+              {pr.title}
             </Typography>
-          </Stack>
-        </Box>
-        <Stack direction="row" alignItems="center" spacing={1.25} sx={{ flexShrink: 0 }}>
-          {trailing}
-          <IconButton
-            size="small"
-            component="a"
-            href={pr.url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => event.stopPropagation()}
-            sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
-          >
-            <OpenInNewRoundedIcon sx={{ fontSize: 15 }} />
-          </IconButton>
-          <ExpandMoreRoundedIcon
-            sx={{
-              fontSize: 18,
-              color: 'text.disabled',
-              transform: expanded ? 'rotate(180deg)' : 'none',
-              transition: 'transform 0.2s',
-            }}
-          />
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.75}
+              sx={{ mt: 0.25, minWidth: 0, color: 'text.secondary' }}
+            >
+              <Typography variant="caption" noWrap component="div" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
+                {meta ?? defaultMeta(pr)}
+              </Typography>
+            </Stack>
+          </Box>
         </Stack>
+        <RowColumn width={270} expand>
+          {reviewer}
+        </RowColumn>
+        <RowColumn width={160}>{status}</RowColumn>
+        <RowColumn width={88} justify="flex-end">
+          <Stack direction="row" alignItems="center" spacing={0.25} justifyContent="flex-end">
+            <IconButton
+              size="small"
+              component="a"
+              href={pr.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(event) => event.stopPropagation()}
+              sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main' } }}
+            >
+              <OpenInNewRoundedIcon sx={{ fontSize: 15 }} />
+            </IconButton>
+            <ExpandMoreRoundedIcon
+              sx={{
+                fontSize: 18,
+                color: 'text.disabled',
+                transform: expanded ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.2s',
+              }}
+            />
+          </Stack>
+        </RowColumn>
       </Stack>
       <Collapse in={expanded} unmountOnExit>
         <Box

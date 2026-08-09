@@ -1,9 +1,10 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { LoginPage } from '@/pages/LoginPage';
 import { AuthCallbackPage } from '@/pages/AuthCallbackPage';
 import { DashboardPage } from '@/pages/DashboardPage';
-import { PeoplePage } from '@/pages/PeoplePage';
+import { SettingsPage } from '@/pages/SettingsPage';
+import { SystemSettingsPage } from '@/pages/SystemSettingsPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -11,6 +12,11 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />;
   }
   return <>{children}</>;
+}
+
+function RedirectWithQuery({ to }: { to: string }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.search}`} replace />;
 }
 
 export function AppRoutes() {
@@ -51,13 +57,22 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/people"
+        path="/settings"
         element={
           <RequireAuth>
-            <PeoplePage />
+            <SettingsPage />
           </RequireAuth>
         }
       />
+      <Route
+        path="/settings/system"
+        element={
+          <RequireAuth>
+            <SystemSettingsPage />
+          </RequireAuth>
+        }
+      />
+      <Route path="/people" element={<RedirectWithQuery to="/settings/system" />} />
       <Route path="/trends" element={<Navigate to="/analytics" replace />} />
     </Routes>
   );

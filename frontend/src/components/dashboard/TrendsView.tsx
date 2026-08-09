@@ -1,9 +1,13 @@
 import { useState } from 'react';
-import { Stack, Tab, Tabs, alpha } from '@mui/material';
+import { Box, Stack, Tab, Tabs, alpha } from '@mui/material';
 import type { DashboardSummary } from '@/types/dashboard';
-import { ZoneSection } from './ZoneSection';
+import { Panel } from './Panel';
+import { KpiRow } from './KpiRow';
+import { FlowChart } from './FlowChart';
+import { SpeedTrendChart } from './SpeedTrendChart';
+import { OpenAgeChart } from './OpenAgeChart';
+import { ReviewDepthChart } from './ReviewDepthChart';
 import { WaitFlowChart, type WaitStat } from './WaitFlowChart';
-import { WeeklyPhaseChart } from './WeeklyPhaseChart';
 
 function StatTabs({ stat, onChange }: { stat: WaitStat; onChange: (value: WaitStat) => void }) {
   return (
@@ -43,8 +47,47 @@ export function TrendsView({ summary }: { summary: DashboardSummary }) {
   const [stat, setStat] = useState<WaitStat>('median');
 
   return (
-    <Stack spacing={4}>
-      <ZoneSection
+    <Stack spacing={3}>
+      <KpiRow summary={summary} />
+
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 3,
+          gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+          alignItems: 'stretch',
+        }}
+      >
+        <Panel
+          title="Opened vs merged"
+          caption="Weekly flow — a healthy team merges about as much as it opens."
+        >
+          <FlowChart points={summary.weeklyFlow} />
+        </Panel>
+
+        <Panel
+          title="Time to merge"
+          caption="How long a PR takes from opening to merge, week by week."
+        >
+          <SpeedTrendChart points={summary.weeklyFlow} />
+        </Panel>
+
+        <Panel
+          title="Open PRs by age"
+          caption="Everything waiting on someone right now — old PRs get harder to merge."
+        >
+          <OpenAgeChart prs={summary.stuckNow} />
+        </Panel>
+
+        <Panel
+          title="Review depth"
+          caption="Share of merged PRs approved without a single comment, and reverts."
+        >
+          <ReviewDepthChart points={summary.qualityTrend} />
+        </Panel>
+      </Box>
+
+      <Panel
         title="Wait times — where the clock runs"
         caption={
           stat === 'median'
@@ -54,14 +97,7 @@ export function TrendsView({ summary }: { summary: DashboardSummary }) {
         action={<StatTabs stat={stat} onChange={setStat} />}
       >
         <WaitFlowChart reviewerRounds={summary.reviewerWaitByRound} authorRounds={summary.authorWaitByRound} stat={stat} />
-      </ZoneSection>
-
-      <ZoneSection
-        title="Where the time goes, week by week"
-        caption="Median hours per phase for PRs merged each week. Taller bars are slower weeks; Pickup is usually the lever."
-      >
-        <WeeklyPhaseChart points={summary.weeklyPhases} />
-      </ZoneSection>
+      </Panel>
     </Stack>
   );
 }

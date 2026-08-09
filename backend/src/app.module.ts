@@ -22,6 +22,13 @@ import { Person } from './domains/people/entities/person.entity';
 import { GithubIdentity } from './domains/people/entities/github-identity.entity';
 import { PullRequest } from './domains/pull-requests/entities/pull-request.entity';
 import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
+import { Repo } from './domains/repos/entities/repo.entity';
+import { AreaRule } from './domains/repos/entities/area-rule.entity';
+import { Suggestion } from './domains/assignment/entities/suggestion.entity';
+import { AppSetting } from './domains/assignment/entities/app-setting.entity';
+import { PersonSettings } from './domains/people/entities/person-settings.entity';
+import { ReposModule } from './domains/repos/repos.module';
+import { AssignmentModule } from './domains/assignment/assignment.module';
 
 @Module({
   imports: [
@@ -29,7 +36,17 @@ import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
     ScheduleModule.forRoot(),
     TypeOrmModule.forRoot({
       ...dataSource.options,
-      entities: [Person, GithubIdentity, PullRequest, PrEvent],
+      entities: [
+        Person,
+        GithubIdentity,
+        PersonSettings,
+        PullRequest,
+        PrEvent,
+        Repo,
+        AreaRule,
+        Suggestion,
+        AppSetting,
+      ],
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
       synchronize: false,
       migrationsRun: true,
@@ -54,6 +71,8 @@ import { PrEvent } from './domains/pull-requests/entities/pr-event.entity';
     PeopleModule,
     PullRequestsModule,
     IngestionModule,
+    ReposModule,
+    AssignmentModule,
     MetricsModule,
     SchedulerModule,
   ],

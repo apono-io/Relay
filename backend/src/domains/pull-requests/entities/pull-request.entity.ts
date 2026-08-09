@@ -157,6 +157,9 @@ export class PullRequest {
   @Column('text', { array: true, default: [] })
   requestedReviewers: string[];
 
+  @Column('text', { array: true, default: [] })
+  filePaths: string[];
+
   @Field(() => GraphQLISODateTime, { nullable: true })
   @Column({ type: 'timestamptz', nullable: true })
   reviewDueAt?: Date;

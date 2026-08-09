@@ -1,4 +1,4 @@
-import { Box, Card, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Stack, Tooltip, Typography } from '@mui/material';
 import type { WaitMetric } from '@/types/dashboard';
 import { formatDuration } from '@/lib/format';
 
@@ -86,16 +86,16 @@ export function WaitFlowChart({
 
   if (segments.length === 0 || total === 0) {
     return (
-      <Card sx={{ px: { xs: 2, sm: 3 }, py: 3, textAlign: 'center' }}>
+      <Box sx={{ py: 4, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
           Not enough review activity yet to show the wait breakdown.
         </Typography>
-      </Card>
+      </Box>
     );
   }
 
   return (
-    <Card sx={{ px: { xs: 2, sm: 3 }, py: 2.5 }}>
+    <Box sx={{ pt: 1.5, pb: 0.5 }}>
       <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
         <Typography variant="caption" sx={{ fontWeight: 600 }}>
           Opened
@@ -162,6 +162,6 @@ export function WaitFlowChart({
         <LegendSwatch color={REVIEWER_COLOR} label="ball with reviewer" />
         <LegendSwatch color={AUTHOR_COLOR} label="ball with author" />
       </Stack>
-    </Card>
+    </Box>
   );
 }

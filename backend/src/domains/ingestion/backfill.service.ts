@@ -22,8 +22,23 @@ export class BackfillService {
     private readonly logger: LoggerService,
   ) {}
 
+  async runRepo(repo: string): Promise<BackfillSummary> {
+    const quarters = Number(this.configService.get('BACKFILL_QUARTERS') ?? 3);
+    const maxPrs = Number(this.configService.get('BACKFILL_MAX_PRS') ?? 0);
+    const cutoff = subQuarters(new Date(), quarters);
+    this.logger.log(`Backfill for ${repo} since ${cutoff.toISOString()}`);
+    const perRepo = await this.backfillRepo(repo, cutoff, maxPrs);
+    const summary: BackfillSummary = {
+      reposProcessed: 1,
+      prsProcessed: perRepo.prsProcessed,
+      eventsInserted: perRepo.eventsInserted,
+    };
+    this.logger.log(`Backfill for ${repo} done: ${JSON.stringify(summary)}`);
+    return summary;
+  }
+
   async run(): Promise<BackfillSummary> {
-    const repos = this.ingest.repos();
+    const repos = await this.ingest.repos();
     const quarters = Number(this.configService.get('BACKFILL_QUARTERS') ?? 3);
     const maxPrs = Number(this.configService.get('BACKFILL_MAX_PRS') ?? 0);
     const cutoff = subQuarters(new Date(), quarters);
