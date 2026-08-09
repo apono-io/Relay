@@ -44,9 +44,9 @@ describe('dedupeReviewsPerPr', () => {
     const otherPr = review({ prId: 'pr-2' });
     const deduped = dedupeReviewsPerPr([early, late, otherPr]);
     expect(deduped).toHaveLength(2);
-    expect(
-      deduped.find((row) => row.prId === 'pr-1')?.occurredAt,
-    ).toEqual(late.occurredAt);
+    expect(deduped.find((row) => row.prId === 'pr-1')?.occurredAt).toEqual(
+      late.occurredAt,
+    );
   });
 
   it('treats login casing as the same person', () => {

@@ -560,7 +560,9 @@ describe('AssignmentEngine.rank reasons', () => {
       }),
     );
     for (const entry of result.ranked) {
-      expect(entry.reason).toBe('has no open reviews and has not reviewed lately');
+      expect(entry.reason).toBe(
+        'has no open reviews and has not reviewed lately',
+      );
       expect(entry.reason).not.toMatch(/best|well|least|lightest|most/);
     }
   });
