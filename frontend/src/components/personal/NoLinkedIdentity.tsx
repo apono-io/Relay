@@ -6,8 +6,8 @@ import { PERSON_WRITE } from '@/lib/permissions';
 export function NoLinkedIdentity() {
   const { can } = useAuth();
   const hint = can(PERSON_WRITE)
-    ? 'Link your GitHub username on the People page and this view will light up.'
-    : 'Ask an admin to link your GitHub username on the People page and this view will light up.';
+    ? 'Add your GitHub username under System settings, People and this view will light up.'
+    : 'Ask an admin to add your GitHub username under System settings, People and this view will light up.';
   return (
     <Card sx={{ p: 5, textAlign: 'center' }}>
       <Stack spacing={1.5} alignItems="center">

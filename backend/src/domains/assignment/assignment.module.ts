@@ -10,6 +10,7 @@ import { CandidateStatsService } from './candidate-stats.service';
 import { SuggestionService } from './suggestion.service';
 import { AssignmentActionsService } from './assignment-actions.service';
 import { AppSettingsService } from './app-settings.service';
+import { AssignmentPerformanceService } from './assignment-performance.service';
 import { AssignmentResolver } from './assignment.resolver';
 
 @Module({
@@ -28,6 +29,7 @@ import { AssignmentResolver } from './assignment.resolver';
     SuggestionService,
     AssignmentActionsService,
     AppSettingsService,
+    AssignmentPerformanceService,
     AssignmentResolver,
   ],
   exports: [SuggestionService, AssignmentActionsService],

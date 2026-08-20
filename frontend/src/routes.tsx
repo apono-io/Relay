@@ -28,6 +28,14 @@ export function AppRoutes() {
         path="/"
         element={
           <RequireAuth>
+            <DashboardPage view="my-prs" />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth>
             <DashboardPage view="dashboard" />
           </RequireAuth>
         }

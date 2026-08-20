@@ -6,6 +6,12 @@ export const START_GITHUB_LINK = gql`
   }
 `;
 
+export const GITHUB_LINK_AVAILABLE_QUERY = gql`
+  query GithubLinkAvailable {
+    githubLinkAvailable
+  }
+`;
+
 export const ME_QUERY = gql`
   query Me {
     me {

@@ -18,6 +18,15 @@ const PERSONAL_PR_FIELDS = gql`
     firstReviewAt
     approvedAt
     mergedAt
+    checkState
+    area
+    sensitivity
+    reviewRounds {
+      sequence
+      outcome
+      at
+      actorLogin
+    }
   }
 `;
 

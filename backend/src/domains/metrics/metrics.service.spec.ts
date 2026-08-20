@@ -442,15 +442,29 @@ describe('MetricsService.dashboard sync time', () => {
         ),
     };
     const configService = { get: () => undefined };
-    const syncStatus = new SyncStatusService();
+    const settingsRepo = {
+      findOne: () => Promise.resolve(null),
+      save: () => Promise.resolve(undefined),
+      create: (value: unknown) => value,
+    };
+    const syncStatus = new SyncStatusService(settingsRepo as never);
     if (overrides.syncedAt) {
-      syncStatus.markSynced(overrides.syncedAt);
+      void syncStatus.markSynced(overrides.syncedAt);
     }
+    const prAreaService = {
+      classifyMany: () => Promise.resolve(new Map()),
+      classify: () => Promise.resolve({ area: null, sensitivity: 0 }),
+    };
+    const pullRequestsService = {
+      reviewRoundsForMany: () => Promise.resolve(new Map()),
+    };
     return new MetricsService(
       prRepo as any,
       eventRepo as any,
       configService as any,
       syncStatus,
+      prAreaService as any,
+      pullRequestsService as any,
     );
   }
 

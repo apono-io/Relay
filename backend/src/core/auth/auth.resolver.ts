@@ -18,6 +18,12 @@ export class AuthResolver {
     return { ...user, permissions: getPermissionsForRole(user.role) };
   }
 
+  @Query(() => Boolean, { name: 'githubLinkAvailable' })
+  @UseGuards(JwtAuthGuard)
+  githubLinkAvailable(): boolean {
+    return this.githubLinkService.isConfigured();
+  }
+
   @Mutation(() => String, { name: 'startGithubLink' })
   @RequirePermissions(Permissions.IDENTITY_LINK)
   startGithubLink(@CurrentUser() user: AuthenticatedUser): string {

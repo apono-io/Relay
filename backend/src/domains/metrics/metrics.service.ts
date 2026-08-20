@@ -21,6 +21,12 @@ import {
   WeeklyPhasePoint,
   WeeklyQualityPoint,
 } from './models/dashboard.model';
+import {
+  AreaClassification,
+  PrAreaService,
+} from '@/domains/repos/pr-area.service';
+import { PullRequestsService } from '@/domains/pull-requests/pull-requests.service';
+import { ReviewRoundEntry } from '@/domains/pull-requests/review-rounds.logic';
 
 const MAX_ROUNDS = 5;
 const FLOW_WEEKS = 12;
@@ -33,6 +39,8 @@ export class MetricsService {
     @InjectRepository(PrEvent) private readonly eventRepo: Repository<PrEvent>,
     private readonly configService: ConfigService,
     private readonly syncStatus: SyncStatusService,
+    private readonly prAreaService: PrAreaService,
+    private readonly pullRequestsService: PullRequestsService,
   ) {}
 
   async dashboard(
@@ -57,6 +65,17 @@ export class MetricsService {
       botReviewers,
       repo,
     );
+    const openPrs = prs.filter(
+      (pr) =>
+        pr.state === PrState.OPEN &&
+        !pr.isDraft &&
+        pr.waitingOn !== WaitingOn.NONE &&
+        pr.openedAt != null,
+    );
+    const [areaByPrId, roundsByPrId] = await Promise.all([
+      this.prAreaService.classifyMany(openPrs),
+      this.pullRequestsService.reviewRoundsForMany(openPrs),
+    ]);
     const summary = MetricsService.buildSummary(
       prs,
       now,
@@ -64,6 +83,8 @@ export class MetricsService {
       slaMinutes,
       botReviewers,
       reviewActorsByPrId,
+      areaByPrId,
+      roundsByPrId,
     );
     summary.lastSyncedAt =
       this.syncStatus.lastSyncedAt ?? (await this.latestIngestedAt());
@@ -159,6 +180,8 @@ export class MetricsService {
     slaMinutes = 120,
     botReviewers: Set<string> = new Set(),
     reviewActorsByPrId: Map<string, string[]> = new Map(),
+    areaByPrId: Map<string, AreaClassification> = new Map(),
+    roundsByPrId: Map<string, ReviewRoundEntry[]> = new Map(),
   ): DashboardSummary {
     const eligible = allPrs.filter((pr) => !pr.isBot && !pr.isRevert);
 
@@ -227,6 +250,8 @@ export class MetricsService {
         now,
         slaMinutes,
         reviewActorsByPrId,
+        areaByPrId,
+        roundsByPrId,
       ),
       fairness: MetricsService.fairness(reviewerLogins, botReviewers),
       qualityTrend: MetricsService.qualityTrend(allPrs),
@@ -309,6 +334,8 @@ export class MetricsService {
     now: Date,
     slaMinutes = 120,
     reviewActorsByPrId: Map<string, string[]> = new Map(),
+    areaByPrId: Map<string, AreaClassification> = new Map(),
+    roundsByPrId: Map<string, ReviewRoundEntry[]> = new Map(),
   ): StuckPr[] {
     return allPrs
       .filter(
@@ -338,6 +365,9 @@ export class MetricsService {
         readyAt: pr.readyAt ?? null,
         firstReviewAt: pr.firstReviewAt ?? null,
         approvedAt: pr.approvedAt ?? null,
+        area: areaByPrId.get(pr.id)?.area ?? null,
+        sensitivity: areaByPrId.get(pr.id)?.sensitivity ?? 0,
+        reviewRounds: roundsByPrId.get(pr.id) ?? [],
       }))
       .sort((a, b) => b.waitingSeconds - a.waitingSeconds);
   }

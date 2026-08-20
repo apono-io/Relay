@@ -1,3 +1,10 @@
+export type ReviewRound = {
+  sequence: number;
+  outcome: 'changes_requested' | 'approved' | 'commented';
+  at: string;
+  actorLogin: string | null;
+};
+
 export type PersonalPr = {
   id: string;
   repo: string;
@@ -15,6 +22,10 @@ export type PersonalPr = {
   firstReviewAt: string | null;
   approvedAt: string | null;
   mergedAt: string | null;
+  checkState: 'PENDING' | 'PASSING' | 'FAILING' | null;
+  area: string | null;
+  sensitivity: number;
+  reviewRounds: ReviewRound[];
 };
 
 export type MyPullRequests = {

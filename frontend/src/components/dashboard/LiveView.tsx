@@ -39,6 +39,8 @@ import {
   RelayAssignmentPair,
 } from '@/components/shared/RelayAssignmentPair';
 import { PrTimeline } from '@/components/shared/PrTimeline';
+import { RepoChip } from '@/components/shared/RepoChip';
+import { SensitivityDots } from '@/components/shared/SensitivityDots';
 
 export function prKey(pr: { repo: string; number: number }): string {
   return `${pr.repo}#${pr.number}`;
@@ -46,10 +48,6 @@ export function prKey(pr: { repo: string; number: number }): string {
 
 const STALL_THRESHOLD_SECONDS = 7 * 86400;
 const LONG_WAIT_SECONDS = 3 * 86400;
-
-function shortRepo(repo: string): string {
-  return repo.includes('/') ? repo.split('/')[1] : repo;
-}
 
 function waitingBucket(pr: StuckPr): number {
   if (pr.waitingOn === 'reviewer') {
@@ -270,9 +268,10 @@ function PrRow({
               <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
                 {pr.title}
               </Typography>
-              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.25 }}>
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 0.4 }}>
+                <RepoChip repo={pr.repo} />
                 <Typography variant="caption" color="text.secondary" noWrap>
-                  {shortRepo(pr.repo)} #{pr.number} · by
+                  #{pr.number} · by
                 </Typography>
                 <DevAvatar login={pr.authorLogin} size={15} />
                 <Typography variant="caption" color="text.secondary" noWrap>
@@ -281,6 +280,9 @@ function PrRow({
               </Stack>
             </Box>
           </Stack>
+        </TableCell>
+        <TableCell align="center">
+          <SensitivityDots sensitivity={pr.sensitivity} area={pr.area} />
         </TableCell>
         <TableCell>
           <Box sx={{ height: 44, display: 'flex', alignItems: 'center' }}>
@@ -323,7 +325,7 @@ function PrRow({
       </TableRow>
       {expanded && (
         <TableRow>
-          <TableCell colSpan={4} className="relay-detail-cell">
+          <TableCell colSpan={5} className="relay-detail-cell">
             <Box
               sx={(theme) => ({
                 px: 3,
@@ -374,6 +376,9 @@ function PrTable({
         <TableHead>
           <TableRow>
             <TableCell>Pull request</TableCell>
+            <TableCell align="center" sx={{ width: 76 }}>
+              Sensitivity
+            </TableCell>
             <TableCell align="center" sx={{ width: 400 }}>
               Waiting on
             </TableCell>
@@ -487,7 +492,8 @@ export function LiveView({ summary }: { summary: DashboardSummary }) {
                 sx={(theme) => ({ color: chipToneColor(theme, 'green'), fontSize: 28 })}
               />
               <Typography variant="body2" color="text.secondary">
-                All caught up — every open pull request has a reviewer.
+                All caught up — nothing from the last week is waiting for a
+                reviewer in the repositories Relay watches.
               </Typography>
             </Stack>
           </Card>

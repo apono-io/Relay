@@ -6,6 +6,19 @@ import { PullRequest } from './entities/pull-request.entity';
 import { PrEvent } from './entities/pr-event.entity';
 import { PhaseComputer, isBotReviewer } from './phase-computer.service';
 import { WaitingOn, PrState, PrEventType } from './pr-enums';
+import {
+  buildReviewRounds,
+  ReviewEventRow,
+  ReviewRoundEntry,
+} from './review-rounds.logic';
+
+type VerdictRow = {
+  prId: string;
+  type: string;
+  actorLogin: string | null;
+  state: string | null;
+  occurredAt: Date;
+};
 
 @Injectable()
 export class PullRequestsService {
@@ -85,6 +98,24 @@ export class PullRequestsService {
     return this.reviewerInvolvementQuery(logins)
       .andWhere('pr.state = :state', { state: PrState.OPEN })
       .andWhere('pr."isDraft" = false')
+      .andWhere(
+        `COALESCE((
+           SELECT verdict.payload->>'state'
+           FROM pr_events verdict
+           WHERE verdict."prId" = pr.id
+             AND verdict.type IN (:...verdictTypes)
+             AND LOWER(verdict."actorLogin") = ANY(:logins)
+           ORDER BY verdict."occurredAt" DESC
+           LIMIT 1
+         ), '') != 'approved'`,
+        {
+          logins: lowered(logins),
+          verdictTypes: [
+            PrEventType.REVIEW_SUBMITTED,
+            PrEventType.REVIEW_DISMISSED,
+          ],
+        },
+      )
       .orderBy('pr."openedAt"', 'ASC', 'NULLS LAST')
       .getMany();
   }
@@ -136,6 +167,83 @@ export class PullRequestsService {
         (login) =>
           !isBotReviewer(login, bots) && login.toLowerCase() !== author,
       );
+  }
+
+  async reviewRoundsFor(
+    prId: string,
+    authorLogin: string,
+  ): Promise<ReviewRoundEntry[]> {
+    const rows = await this.reviewVerdictRows([prId]);
+    return buildReviewRounds(this.humanVerdicts(rows, authorLogin));
+  }
+
+  async reviewRoundsForMany(
+    prs: { id: string; authorLogin: string }[],
+  ): Promise<Map<string, ReviewRoundEntry[]>> {
+    const result = new Map<string, ReviewRoundEntry[]>();
+    if (prs.length === 0) {
+      return result;
+    }
+    const rows = await this.reviewVerdictRows(prs.map((pr) => pr.id));
+    const byPr = new Map<string, VerdictRow[]>();
+    for (const row of rows) {
+      const existing = byPr.get(row.prId);
+      if (existing) {
+        existing.push(row);
+      } else {
+        byPr.set(row.prId, [row]);
+      }
+    }
+    for (const pr of prs) {
+      const verdicts = this.humanVerdicts(
+        byPr.get(pr.id) ?? [],
+        pr.authorLogin,
+      );
+      result.set(pr.id, buildReviewRounds(verdicts));
+    }
+    return result;
+  }
+
+  private async reviewVerdictRows(prIds: string[]): Promise<VerdictRow[]> {
+    const rows = await this.eventRepo
+      .createQueryBuilder('event')
+      .select('event.prId', 'prId')
+      .addSelect('event.type', 'type')
+      .addSelect('event.actorLogin', 'actorLogin')
+      .addSelect("event.payload->>'state'", 'state')
+      .addSelect('event.occurredAt', 'occurredAt')
+      .where('event."prId" IN (:...prIds)', { prIds })
+      .andWhere('event.type IN (:...types)', {
+        types: [PrEventType.REVIEW_SUBMITTED, PrEventType.REVIEW_DISMISSED],
+      })
+      .orderBy('event."occurredAt"', 'ASC')
+      .getRawMany<VerdictRow>();
+    return rows.map((row) => ({
+      ...row,
+      occurredAt: new Date(row.occurredAt),
+    }));
+  }
+
+  private humanVerdicts(
+    rows: VerdictRow[],
+    authorLogin: string,
+  ): ReviewEventRow[] {
+    const bots = this.botReviewers();
+    const author = authorLogin.toLowerCase();
+    return rows
+      .filter((row) => {
+        const login = row.actorLogin;
+        if (!login) {
+          return false;
+        }
+        return !isBotReviewer(login, bots) && login.toLowerCase() !== author;
+      })
+      .map((row) => ({
+        type: row.type,
+        actorLogin: row.actorLogin,
+        state: row.state,
+        occurredAt: row.occurredAt,
+      }));
   }
 
   private botReviewers(): Set<string> {

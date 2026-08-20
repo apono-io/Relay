@@ -6,6 +6,7 @@ import { PeopleSettings } from '@/components/people/PeopleSettings';
 import { RepositoriesSettings } from '@/components/system/RepositoriesSettings';
 import { AreaRulesSettings } from '@/components/system/AreaRulesSettings';
 import { AssignmentQuietPhase } from '@/components/system/AssignmentQuietPhase';
+import { EnginePerformance } from '@/components/system/EnginePerformance';
 import { AssignmentControls } from '@/components/system/AssignmentControls';
 import { SettingsTabs, resolveSettingsTab } from '@/components/shared/SettingsTabs';
 import { useAuth } from '@/context/AuthContext';
@@ -48,6 +49,7 @@ export function SystemSettingsPage() {
             {tab === 'engine' && (
               <Stack spacing={3}>
                 <AssignmentControls />
+                <EnginePerformance />
                 <AssignmentQuietPhase />
               </Stack>
             )}

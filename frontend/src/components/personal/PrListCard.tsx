@@ -18,6 +18,8 @@ import {
   type PrVisualState,
 } from '@/components/shared/pr-visuals';
 import { PrTimeline } from '@/components/shared/PrTimeline';
+import { RepoChip } from '@/components/shared/RepoChip';
+import { SensitivityDots } from '@/components/shared/SensitivityDots';
 
 const WAITING_CHIPS: Record<
   PersonalPr['waitingOn'],
@@ -134,14 +136,18 @@ export function PrRow({
               direction="row"
               alignItems="center"
               spacing={0.75}
-              sx={{ mt: 0.25, minWidth: 0, color: 'text.secondary' }}
+              sx={{ mt: 0.5, minWidth: 0, color: 'text.secondary' }}
             >
+              <RepoChip repo={pr.repo} />
               <Typography variant="caption" noWrap component="div" sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}>
                 {meta ?? defaultMeta(pr)}
               </Typography>
             </Stack>
           </Box>
         </Stack>
+        <RowColumn width={52}>
+          <SensitivityDots sensitivity={pr.sensitivity} area={pr.area} />
+        </RowColumn>
         <RowColumn width={270} expand>
           {reviewer}
         </RowColumn>
@@ -186,14 +192,12 @@ export function PrRow({
 }
 
 function defaultMeta(pr: PersonalPr): string {
-  const repo = pr.repo.includes('/') ? pr.repo.split('/')[1] : pr.repo;
   const opened = pr.openedAt ? ` · opened ${ago(pr.openedAt)}` : '';
-  return `${repo} #${pr.number}${opened}`;
+  return `#${pr.number}${opened}`;
 }
 
 export function prMetaBase(pr: PersonalPr): string {
-  const repo = pr.repo.includes('/') ? pr.repo.split('/')[1] : pr.repo;
-  return `${repo} #${pr.number}`;
+  return `#${pr.number}`;
 }
 
 export function PrListCard({

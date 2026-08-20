@@ -10,6 +10,7 @@ import {
   TextField,
   Alert,
 } from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { ROLES } from '@/lib/permissions';
 import type { Person } from '@/types/people';
 
@@ -56,12 +57,17 @@ export function PersonFormDialog({
   onSave,
 }: Props) {
   const [draft, setDraft] = useState<PersonDraft>(() => draftFrom(person, presetLogin));
+  const [showMore, setShowMore] = useState(false);
 
   useEffect(() => {
     if (open) {
       setDraft(draftFrom(person, presetLogin));
+      setShowMore(false);
     }
   }, [open, person, presetLogin]);
+
+  const editing = person !== null;
+  const detailsOpen = editing || showMore || presetLogin.length > 0;
 
   const set = (field: keyof PersonDraft) => (event: { target: { value: string } }) =>
     setDraft((current) => ({ ...current, [field]: event.target.value }));
@@ -79,26 +85,49 @@ export function PersonFormDialog({
             value={draft.email}
             onChange={set('email')}
             error={draft.email.length > 0 && !emailLooksValid}
-            helperText="The address this person signs in with"
+            helperText={
+              editing
+                ? 'The address this person signs in with'
+                : 'That is all Relay needs. Everything else can be filled in later.'
+            }
             fullWidth
-            autoFocus={!person}
+            autoFocus={!editing}
           />
-          <TextField label="Name" value={draft.displayName} onChange={set('displayName')} fullWidth />
-          <TextField
-            label="GitHub login"
-            value={draft.githubLogin}
-            onChange={set('githubLogin')}
-            helperText="Typed in here, this counts as confirmed and a later guess will not replace it"
-            fullWidth
-          />
-          <TextField label="Team" value={draft.team} onChange={set('team')} fullWidth />
-          <TextField label="Role" value={draft.role} onChange={set('role')} select fullWidth>
-            {ROLES.map((role) => (
-              <MenuItem key={role} value={role}>
-                {role}
-              </MenuItem>
-            ))}
-          </TextField>
+          {detailsOpen ? (
+            <>
+              <TextField
+                label="Name"
+                value={draft.displayName}
+                onChange={set('displayName')}
+                fullWidth
+              />
+              <TextField
+                label="GitHub login"
+                value={draft.githubLogin}
+                onChange={set('githubLogin')}
+                helperText="Typed in here, this counts as confirmed and a later guess will not replace it"
+                fullWidth
+              />
+              <TextField label="Team" value={draft.team} onChange={set('team')} fullWidth />
+              <TextField label="Role" value={draft.role} onChange={set('role')} select fullWidth>
+                {ROLES.map((role) => (
+                  <MenuItem key={role} value={role}>
+                    {role}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </>
+          ) : (
+            <Button
+              onClick={() => setShowMore(true)}
+              size="small"
+              color="inherit"
+              startIcon={<ExpandMoreRoundedIcon />}
+              sx={{ alignSelf: 'flex-start', color: 'text.secondary' }}
+            >
+              Add name, GitHub login, team or role
+            </Button>
+          )}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2.5 }}>

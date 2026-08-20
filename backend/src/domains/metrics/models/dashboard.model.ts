@@ -5,6 +5,7 @@ import {
   GraphQLISODateTime,
   Int,
 } from '@nestjs/graphql';
+import { ReviewRoundModel } from '@/domains/pull-requests/models/review-round.model';
 
 @ObjectType('WaitMetric')
 export class WaitMetric {
@@ -100,6 +101,15 @@ export class StuckPr {
 
   @Field(() => GraphQLISODateTime, { nullable: true })
   approvedAt: Date | null;
+
+  @Field(() => String, { nullable: true })
+  area: string | null;
+
+  @Field(() => Int)
+  sensitivity: number;
+
+  @Field(() => [ReviewRoundModel])
+  reviewRounds: ReviewRoundModel[];
 }
 
 @ObjectType('ReviewerLoad')

@@ -1,13 +1,22 @@
-import { Args, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
+import {
+  Args,
+  Int,
+  Parent,
+  Query,
+  ResolveField,
+  Resolver,
+} from '@nestjs/graphql';
 import { UseGuards } from '@nestjs/common';
 import { subDays } from 'date-fns';
 import { PullRequest } from './entities/pull-request.entity';
 import { PullRequestsService } from './pull-requests.service';
 import { MyPullRequests, MyReviews } from './models/personal-prs.model';
+import { ReviewRoundModel } from './models/review-round.model';
 import { JwtAuthGuard } from '@/core/auth/guards/jwt-auth.guard';
 import { CurrentUser } from '@/core/auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '@/core/auth/models/auth-user.model';
 import { PeopleService } from '@/domains/people/people.service';
+import { PrAreaService } from '@/domains/repos/pr-area.service';
 
 const MERGED_WINDOW_DAYS = 14;
 const UUID_PATTERN =
@@ -18,6 +27,7 @@ export class PullRequestsResolver {
   constructor(
     private readonly pullRequestsService: PullRequestsService,
     private readonly peopleService: PeopleService,
+    private readonly prAreaService: PrAreaService,
   ) {}
 
   @Query(() => [PullRequest], { name: 'pullRequests' })
@@ -67,6 +77,23 @@ export class PullRequestsResolver {
   @ResolveField(() => [String], { name: 'reviewerLogins' })
   reviewerLogins(@Parent() pr: PullRequest): Promise<string[]> {
     return this.pullRequestsService.humanReviewerLogins(pr.id, pr.authorLogin);
+  }
+
+  @ResolveField(() => String, { name: 'area', nullable: true })
+  async area(@Parent() pr: PullRequest): Promise<string | null> {
+    const match = await this.prAreaService.classify(pr);
+    return match.area;
+  }
+
+  @ResolveField(() => Int, { name: 'sensitivity' })
+  async sensitivity(@Parent() pr: PullRequest): Promise<number> {
+    const match = await this.prAreaService.classify(pr);
+    return match.sensitivity;
+  }
+
+  @ResolveField(() => [ReviewRoundModel], { name: 'reviewRounds' })
+  reviewRounds(@Parent() pr: PullRequest): Promise<ReviewRoundModel[]> {
+    return this.pullRequestsService.reviewRoundsFor(pr.id, pr.authorLogin);
   }
 
   private async viewerLogins(user: AuthenticatedUser): Promise<string[]> {

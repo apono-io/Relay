@@ -1,3 +1,5 @@
+import type { ReviewRound } from './personal';
+
 export type WaitMetric = {
   label: string;
   medianSeconds: number | null;
@@ -20,6 +22,9 @@ export type StuckPr = {
   readyAt: string | null;
   firstReviewAt: string | null;
   approvedAt: string | null;
+  area: string | null;
+  sensitivity: number;
+  reviewRounds: ReviewRound[];
 };
 
 export type WeeklyFlowPoint = {

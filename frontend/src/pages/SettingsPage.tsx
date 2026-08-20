@@ -22,7 +22,10 @@ import { StatusStrip } from '@/components/dashboard/StatusStrip';
 import { SettingsTabs, resolveSettingsTab } from '@/components/shared/SettingsTabs';
 import { useAuth } from '@/context/AuthContext';
 import { useColorMode } from '@/context/ColorModeContext';
-import { START_GITHUB_LINK } from '@/graphql/auth';
+import {
+  GITHUB_LINK_AVAILABLE_QUERY,
+  START_GITHUB_LINK,
+} from '@/graphql/auth';
 import { MY_SETTINGS_QUERY, SET_MY_ASSIGNMENT_MODE } from '@/graphql/assignment';
 import type { AssignmentMode } from '@/types/assignment';
 import { IDENTITY_LINK, SETTINGS_WRITE_OWN } from '@/lib/permissions';
@@ -211,6 +214,10 @@ function AssignmentSection() {
 function GithubSection() {
   const [startGithubLink, linkState] = useMutation<{ startGithubLink: string }>(START_GITHUB_LINK);
   const [error, setError] = useState<string | null>(null);
+  const { data } = useQuery<{ githubLinkAvailable: boolean }>(
+    GITHUB_LINK_AVAILABLE_QUERY,
+  );
+  const available = data?.githubLinkAvailable ?? false;
 
   const linkOwnAccount = async () => {
     try {
@@ -232,14 +239,22 @@ function GithubSection() {
       <Stack spacing={1.5} alignItems="flex-start">
         <LinkOutcome />
         {error && <Alert severity="error">{error}</Alert>}
-        <Button
-          variant="outlined"
-          startIcon={<GitHubIcon />}
-          onClick={() => void linkOwnAccount()}
-          disabled={linkState.loading}
-        >
-          Link my GitHub account
-        </Button>
+        {available ? (
+          <Button
+            variant="outlined"
+            startIcon={<GitHubIcon />}
+            onClick={() => void linkOwnAccount()}
+            disabled={linkState.loading}
+          >
+            Link my GitHub account
+          </Button>
+        ) : (
+          <Alert severity="info" sx={{ maxWidth: 520 }}>
+            Signing in with GitHub is not switched on for this Relay yet. An admin can
+            link your GitHub username directly under System settings, People — that
+            works the same way for matching your pull requests.
+          </Alert>
+        )}
       </Stack>
     </SettingsSection>
   );

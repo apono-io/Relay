@@ -93,7 +93,12 @@ function build(deps: Deps = {}) {
 
   const logger = { log: () => {} };
 
-  const syncStatus = new SyncStatusService();
+  const settingsRepo = {
+    findOne: () => Promise.resolve(null),
+    save: () => Promise.resolve(undefined),
+    create: (value: unknown) => value,
+  };
+  const syncStatus = new SyncStatusService(settingsRepo as never);
   const schedulerRegistry = { addInterval: () => {} };
   const job = new GapFillJob(
     configService as any,
@@ -264,6 +269,45 @@ describe('GapFillJob.pull', () => {
     });
     await job.pull(NOW);
     expect(syncStatus.lastSyncedAt).toEqual(NOW);
+  });
+
+  it('scans back to the last successful sync after days of downtime', async () => {
+    const { job, syncStatus, persistCalls } = build({
+      lookbackHours: 24,
+      pages: {
+        'apono-io/apono-mono': [
+          page([
+            node(1, '2026-07-07T11:00:00Z'), // 1h ago — in the regular window
+            node(2, '2026-07-05T00:00:00Z'), // 60h ago — outside window, inside the outage gap
+            node(3, '2026-07-04T00:00:00Z'), // before the watermark — stop here
+          ]),
+        ],
+      },
+      insertedPerPr: 1,
+    });
+    await syncStatus.markSynced(new Date('2026-07-04T12:00:00Z')); // last success: 3 days ago
+    const summary = await job.pull(NOW);
+    expect(persistCalls.map((c) => c.header.number)).toEqual([1, 2]);
+    expect(summary.prsScanned).toBe(2);
+    expect(syncStatus.lastSyncedAt).toEqual(NOW);
+  });
+
+  it('keeps the regular window when the last sync is fresh', async () => {
+    const { job, syncStatus, persistCalls } = build({
+      lookbackHours: 24,
+      pages: {
+        'apono-io/apono-mono': [
+          page([
+            node(1, '2026-07-07T11:00:00Z'), // in window
+            node(2, '2026-07-05T00:00:00Z'), // outside window — skipped
+          ]),
+        ],
+      },
+      insertedPerPr: 1,
+    });
+    await syncStatus.markSynced(new Date('2026-07-07T11:55:00Z'));
+    await job.pull(NOW);
+    expect(persistCalls.map((c) => c.header.number)).toEqual([1]);
   });
 });
 

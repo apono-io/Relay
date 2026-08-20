@@ -55,15 +55,15 @@ type NavItem = { key: View; label: string; icon: ReactNode; path: string; permis
 const NAV_GROUPS: { label?: string; items: NavItem[] }[] = [
   {
     items: [
-      { key: 'dashboard', label: 'Dashboard', icon: <SpaceDashboardOutlinedIcon />, path: '/' },
-      { key: 'analytics', label: 'Analytics', icon: <InsightsOutlinedIcon />, path: '/analytics' },
+      { key: 'my-prs', label: 'My PRs', icon: <AccountTreeOutlinedIcon />, path: '/' },
+      { key: 'my-reviews', label: 'My Reviews', icon: <RateReviewOutlinedIcon />, path: '/my-reviews' },
     ],
   },
   {
-    label: 'For you',
+    label: 'Team',
     items: [
-      { key: 'my-prs', label: 'My PRs', icon: <AccountTreeOutlinedIcon />, path: '/my-prs' },
-      { key: 'my-reviews', label: 'My Reviews', icon: <RateReviewOutlinedIcon />, path: '/my-reviews' },
+      { key: 'dashboard', label: 'Dashboard', icon: <SpaceDashboardOutlinedIcon />, path: '/dashboard' },
+      { key: 'analytics', label: 'Analytics', icon: <InsightsOutlinedIcon />, path: '/analytics' },
     ],
   },
 ];

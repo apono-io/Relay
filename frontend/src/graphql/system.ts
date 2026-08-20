@@ -62,6 +62,47 @@ export const DELETE_AREA_RULE = gql`
   }
 `;
 
+export const ASSIGNMENT_PERFORMANCE_QUERY = gql`
+  query AssignmentPerformance {
+    assignmentPerformance {
+      totals {
+        recorded
+        decided
+        agreements
+        awaiting
+        assigned
+        autoAssigned
+        manualAssigned
+        liveAssigned
+        peoplePicked
+        agreementRate
+        coverageRate
+        medianDecisionSeconds
+      }
+      weekly {
+        week
+        weekStart
+        recorded
+        decided
+        agreements
+        assigned
+        agreementRate
+      }
+      byArea {
+        area
+        recorded
+        decided
+        agreements
+        agreementRate
+      }
+      spread {
+        displayName
+        picks
+      }
+    }
+  }
+`;
+
 export const ASSIGNMENT_COMPARISON_QUERY = gql`
   query AssignmentComparison {
     assignmentComparison {

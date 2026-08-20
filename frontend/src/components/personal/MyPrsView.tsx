@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useMutation, useQuery } from '@apollo/client';
 import { Alert, Button, Skeleton, Snackbar, Stack, Typography } from '@mui/material';
 import PersonAddAltRoundedIcon from '@mui/icons-material/PersonAddAltRounded';
+import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded';
 import { MY_PULL_REQUESTS_QUERY } from '@/graphql/personal';
 import { ASSIGN_REVIEWER, RELAY_ASSIGNMENTS_QUERY } from '@/graphql/assignment';
 import type { MyPullRequests, PersonalPr } from '@/types/personal';
@@ -26,8 +27,10 @@ import {
   AssignmentControls,
   RelayAssignmentPair,
 } from '@/components/shared/RelayAssignmentPair';
+import { MyTurnChecklist } from './MyTurnChecklist';
+import { buildMyTurn } from './my-turn';
 
-type Section = 'open' | 'merged';
+type Section = 'waiting' | 'merged';
 
 export function MyPrsView() {
   const { data, loading, error } = useQuery<{ myPullRequests: MyPullRequests }>(
@@ -51,11 +54,19 @@ export function MyPrsView() {
   const [assignReviewer] = useMutation(ASSIGN_REVIEWER);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignError, setAssignError] = useState<string | null>(null);
-  const [openSection, setOpenSection] = useState<Section | null>('open');
+  const [openSections, setOpenSections] = useState<Section[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const toggleSection = (section: Section) =>
-    setOpenSection((current) => (current === section ? null : section));
+    setOpenSections((current) =>
+      current.includes(section)
+        ? current.filter((open) => open !== section)
+        : [...current, section],
+    );
+  const openSectionOnce = (section: Section) =>
+    setOpenSections((current) =>
+      current.includes(section) ? current : [...current, section],
+    );
   const toggleRow = (id: string) =>
     setExpandedId((current) => (current === id ? null : id));
 
@@ -64,6 +75,12 @@ export function MyPrsView() {
     setAssignError(null);
     void assignReviewer({ variables: { repo: pr.repo, number: pr.number } })
       .then(() => assignmentsQuery.refetch())
+      .then(() => {
+        // The PR just moved out of the checklist into the waiting list, so
+        // open that section and its row to show who picked it up.
+        openSectionOnce('waiting');
+        setExpandedId(pr.id);
+      })
       .catch((mutationError: Error) => setAssignError(mutationError.message))
       .finally(() => setAssigningId(null));
   };
@@ -152,6 +169,10 @@ export function MyPrsView() {
     return <NoLinkedIdentity />;
   }
 
+  const turn = buildMyTurn(result.open, (pr) =>
+    assignments.has(`${pr.repo}#${pr.number}`),
+  );
+
   return (
     <Stack spacing={4}>
       <Stack direction="row" alignItems="center" spacing={1}>
@@ -168,19 +189,27 @@ export function MyPrsView() {
         ))}
       </Stack>
 
+      <MyTurnChecklist
+        items={turn.mine}
+        totalOpen={result.open.length}
+        assigningId={assigningId}
+        onAssign={onAssign}
+      />
+
       <PrListCard
-        title="Open"
-        icon={<PrStateIcon state="open" />}
-        count={result.open.length}
-        caption="Where each of your pull requests is waiting."
+        title="Waiting for your reviewer"
+        icon={<HourglassEmptyRoundedIcon sx={{ fontSize: 18, color: 'text.secondary' }} />}
+        count={turn.waiting.length}
+        caption="No action needed from you right now."
         collapsible
-        expanded={openSection === 'open'}
-        onToggle={() => toggleSection('open')}
+        defaultExpanded={false}
+        expanded={openSections.includes('waiting')}
+        onToggle={() => toggleSection('waiting')}
       >
-        {result.open.length === 0 ? (
-          <EmptyRow text="No open pull requests right now. Enjoy the calm." />
+        {turn.waiting.length === 0 ? (
+          <EmptyRow text="Nothing of yours is parked with someone else." />
         ) : (
-          result.open.map((pr) => (
+          turn.waiting.map((pr) => (
             <PrRow
               key={pr.id}
               pr={pr}
@@ -198,7 +227,7 @@ export function MyPrsView() {
         count={result.recentlyMerged.length}
         caption="Merged in the last 14 days."
         collapsible
-        expanded={openSection === 'merged'}
+        expanded={openSections.includes('merged')}
         onToggle={() => toggleSection('merged')}
       >
         {result.recentlyMerged.length === 0 ? (

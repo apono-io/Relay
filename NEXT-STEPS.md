@@ -1,12 +1,18 @@
 # Relay — current state and roadmap
 
-Updated 2026-07-30. The scaffold-era build order is done; this file now tracks what the
+Updated 2026-08-19. The scaffold-era build order is done; this file now tracks what the
 app does, what is still open, and the order of the next features.
 
 ## Where the app stands
 
-Phase 1 (baseline + live pipeline + dashboard) is complete, and several Phase-2 pieces
-landed early. Everything below is built, tested, and running locally under Tilt.
+Phase 1 (baseline + live pipeline + dashboard) is complete, Phase 2 landed, and the
+assignment engine that was planned as Phase 3 is built and running in test mode. Slack is
+the only planned feature with no code. Everything below runs locally under Tilt.
+
+Relay watches **two** repositories, `apono-io/apono-mono` and `apono-io/integrations`,
+holding roughly 3,700 pull requests and 42,000 events backfilled to November 2025. The
+roster is 17 people, all active. These numbers move; treat them as a scale, not a fact to
+cite.
 
 | Area | State |
 |---|---|
@@ -18,76 +24,93 @@ landed early. Everything below is built, tested, and running locally under Tilt.
 | Personal inbox: My PRs + My Reviews through `github_identities` | done |
 | People & RBAC: seeding, identity linking, roles, permissions guard, active/disabled gate | done |
 | Settings pages: user settings (profile, theme, GitHub link) + admin System settings (People) | done |
-| GitHub OAuth linking flow | code-complete; needs a GitHub OAuth App (`GITHUB_OAUTH_CLIENT_ID/SECRET`) |
+| GitHub OAuth linking flow | code-complete; needs a GitHub OAuth App (`GITHUB_OAUTH_CLIENT_ID/SECRET`). Until then Settings hides the button and points to the manual link under System settings → People |
 | Assignment slice 1: PR file paths ingested + history backfilled | done |
 | Assignment slice 2: repos in System settings (add with GitHub validation), per-repo area rules auto-seeded + editable | done |
 | Assignment slice 3: mastery index, deterministic engine (TDD), quiet-phase recording, admin comparison panel | done |
 | Assignment slices 4–5 in shadow mode: personal modes (off/hybrid/auto), Assign-reviewer button, auto-assign after grace window, reviewer→author pairs on every row | done — the "Actually assign" toggle (System settings, default off) keeps every assignment app-only ("test") until the team trusts it |
 | Assignment polish: a submitted review counts as engagement (no assign over an active review), actual reviewers shown on in-progress and merged rows, Approved chip once review is done, multi-reviewer pairs, per-pick "why" explanation, reset-assignment control | done |
 | Assignment hardening: repeat-pick damping (no back-to-back picks while someone comparable is free), race-safe atomic claim with GitHub rollback, self-review/duplicate-review stats fixes, honest reason phrases, NaN-safe config reads, full unit coverage of the actions service | done — 161 backend tests |
+| Focus batch: My PRs is a my-turn checklist, repo chip + sensitivity dots on every PR table, approved PRs leave My Reviews, review rounds named in the timeline, menu split into personal / Team, email-only Add person, Assignment-engine performance view | done — 191 backend tests |
 
 Known limits:
 
 - A token already issued keeps its role for up to one day; deactivating a person blocks
   the next sign-in, not the current session.
-- Webhooks exist only as the deployed path; locally the 1-minute gap-fill is the live
-  mechanism.
-- The GitHub PAT is read-only, so Relay cannot write anything back to GitHub yet
-  (that changes with assignment, below).
+- Webhooks exist only as the deployed path; locally the gap-fill is the live mechanism
+  (`GAP_FILL_INTERVAL_MINUTES`, set to 1 locally, default 10 in code). It resumes from a
+  watermark in `app_settings`, so downtime of any length self-heals on the first run after
+  recovery. Verified twice, on 2026-08-13 and 2026-08-18.
+- Tilt reports the Postgres container as healthy after it has died, and the backend
+  `/health` endpoint does not touch the database, so neither signal catches a dead
+  database. Check `docker ps` when data looks frozen.
+- The GitHub PAT is read-only, so Relay cannot write anything to GitHub yet. Turning on
+  live assignment needs both a write-scoped token and the `actuallyAssign` switch.
+- Every area rule currently carries risk level 2, so the sensitivity indicator on PR rows
+  is uniform until those levels are set apart.
+- 16 of the 17 people have no display name, so any surface that names a person falls back
+  to an email address.
 
-## Roadmap — next three features, in order
+## Roadmap
 
-The three candidate features (Slack integration, smart assignment, assignment triggers)
-are one track: pick a reviewer, let the developer control it, deliver it where people
-live. The full design is fixed in
-`docs/PR app SPEC/2026-07-29-smart-assignment-and-interaction-model.md`; the summary:
+Three features were planned as one track: pick a reviewer, let the developer control it,
+deliver it where people live. The first two shipped. Slack is what remains.
 
-### 1. Smart assignment engine — deterministic, no AI — SLICES 1–3 SHIPPED
+### Shipped — the assignment engine and personal control
 
-Auto-assignment **is** the interface: PR opens → grace window → Relay requests a
-reviewer → the reviewer gets a native GitHub notification. No new habits. The engine
-crosses out ineligible people (active, mode not off, identity-linked, not the author),
-then sorts by who knows the area (from PR history — no git blame), who is free now, and
-who reviewed least in 14 days, with admin-configured weights. A private per-area risk
-level (admin table **per repository**, auto-seeded from folder structure) shifts the
-weights; no score or risk value is ever shown to developers — a suggestion is a name
-plus one reason sentence.
+Design: `docs/PR app SPEC/2026-07-29-smart-assignment-and-interaction-model.md`.
 
-Built so far: file-path ingestion (slice 1), repositories + area rules in System
-settings (slice 2), and the engine itself running **quiet** (slice 3) — a sweep every
-five minutes records the pick Relay would make for every reviewer-less PR into the
-`suggestions` table, resolves what the team actually did, and a System-settings panel
-compares the two. Nothing is written to GitHub; the PAT stays read-only.
+The engine crosses out ineligible people (active, mode not off, identity-linked, not the
+author), then sorts by who has worked in the area recently (from PR history, not git
+blame), who is free now, and who has reviewed least in 14 days. A private per-area risk
+level shifts those weights. No score, rank, or risk value is shown to a developer — a
+pick is a name plus one reason sentence and a three-line explanation of the factors.
 
-The quiet phase needs two things to become meaningful: activate the real roster in
-People (only active people are candidates), and let it run for a while before judging
-the agreement rate.
+Personal control works through `person_settings.assignmentMode`: **off** (suggestions
+only), **hybrid** (Relay assigns when the developer triggers it, by button or an
+`@relay assign` comment), **auto** (Relay assigns itself after a grace window). Relay
+only ever acts on a PR with no requested reviewer, so choosing your own reviewer keeps
+Relay out. All 17 people are set to `hybrid`.
 
-### 2. Personal control — suggestions for everyone, assignment by mode
+Two switches keep this safe. `assignment.actuallyAssign` defaults to **off**, so picks
+are recorded and displayed but never written to GitHub. The PAT is read-only, so turning
+that switch on also requires a write-scoped token.
 
-The engine always generates suggestions for reviewer-less PRs; the personal setting
-only controls whether Relay acts. `person_settings.assignmentMode`: **off** (default —
-suggestions only), **hybrid** (Relay assigns when the developer triggers it: the Assign
-button or an `@relay assign` comment), **auto** (Relay assigns by itself after the grace
-window). Relay only ever acts on a PR that has no requested reviewer — pick your own
-reviewer and Relay stays out. `@relay skip` blocks a single PR in auto mode.
-The web UI gives developers visibility when they want it and their settings; admins
-additionally manage people, permissions, area rules, weights, and integrations.
+An admin performance view reports whether the engine is being used and whether it is
+right: agreement with what the team actually did, usage over time, per-area breakdown,
+and how picks spread across people.
 
-### 3. Slack integration
+### Next — Slack delivery (designed, not started)
 
-Slack is the delivery channel, and it multiplies the value of everything above — but it
-is the only feature that needs new external infrastructure (a Slack app, bot token,
-`users.lookupByEmail`). Scope for the first slice:
+Plan of record: `docs/PR app SPEC/2026-08-19-slack-integration-plan.md`, which carries
+the decisions, the ordered build steps, and the rollout. The full design and its
+nineteen acceptance criteria are in the companion `2026-08-17` design document, and the
+human setup actions are in the `2026-08-17` runbook.
 
-- Resolve person → Slack user by email; cache in `person_settings.slackUserId`.
-- Nudge DM when a PR crosses the review-SLA while waiting on a reviewer, on **every**
-  review round, honoring `nudgesEnabled` and `Person.active`.
-- Message actions: "On it", "Reassign" (calls the assignment engine), "Mute today".
-- A daily team-channel digest of the stalled section is the cheap second message type.
+Slack multiplies the value of everything above, and it is the only remaining feature
+that needs external infrastructure: an app installed in the company workspace, a bot
+token, and an email lookup.
 
-The identity chain (stuck PR → login → person → email → Slack user) exists end to end
-today; a nudge for an unresolved login degrades to a roster-report entry.
+The design is gate-first for that reason. Every message passes one guard reading
+`slack.deliveryMode` (`off` records only, then `allowlist`, then `everyone`; default
+`off`), an email allowlist, and a per-person toggle, with `Person.active` outside all of
+it. Every attempt lands in a `notification_deliveries` ledger with its outcome, so a
+quiet phase shows what Relay would send before it sends anything — the same shape the
+assignment quiet phase already uses.
+
+Three message kinds only: assignment proposed, assignment released, and a reviewer
+nudge. The nudge comes from a scanning job rather than a transition, because phases are
+recomputed statelessly and no "just became stuck" event exists.
+
+Assignment confirmation is a separate opt-in setting: Relay claims the pick and sends
+*Take it* / *Pass*, GitHub is written only after acceptance, and a person who passes is
+excluded from the next pick for that PR. Buttons arrive over Socket Mode, so there is no
+public URL, no ingress, and no signing secret.
+
+The human part is three visits to the Slack app page: generate a configuration token,
+press Install and Allow, and create an app-level token. Everything else, including
+creating and configuring the app through the App Manifest API, is automatable. That
+division is a platform limit, not a preference — no Slack API method installs an app.
 
 ## Deliberately still out
 

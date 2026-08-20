@@ -3,9 +3,17 @@ import { format } from 'date-fns';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import RateReviewOutlinedIcon from '@mui/icons-material/RateReviewOutlined';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import type { SvgIconProps } from '@mui/material';
 import type { ComponentType } from 'react';
 import { PrStateIcon, chipToneColor } from './pr-visuals';
+
+export type TimelineReviewRound = {
+  sequence: number;
+  outcome: string;
+  at: string;
+  actorLogin?: string | null;
+};
 
 export type TimelinePr = {
   openedAt: string | null;
@@ -14,6 +22,7 @@ export type TimelinePr = {
   approvedAt: string | null;
   mergedAt: string | null;
   isDraft?: boolean;
+  reviewRounds?: TimelineReviewRound[] | null;
 };
 
 type Stage = {
@@ -22,6 +31,7 @@ type Stage = {
   at: Date | null;
   Icon: ComponentType<SvgIconProps>;
   merged?: boolean;
+  by?: string | null;
 };
 
 type StageStatus = 'done' | 'current' | 'future' | 'skipped';
@@ -41,6 +51,59 @@ function MergedIcon(props: SvgIconProps) {
   return <PrStateIcon state="merged" {...props} sx={{ color: 'inherit' }} />;
 }
 
+function ChangesRequestedIcon(props: SvgIconProps) {
+  return <EditRoundedIcon {...props} sx={{ color: 'inherit' }} />;
+}
+
+function reviewStages(pr: TimelinePr): Stage[] {
+  const rounds = pr.reviewRounds ?? [];
+  const changes = rounds.filter(
+    (round) => round.outcome === 'changes_requested',
+  );
+  const approval = rounds.find((round) => round.outcome === 'approved');
+  const comment = rounds.find((round) => round.outcome === 'commented');
+
+  const stages: Stage[] = changes.map((round) => ({
+    label:
+      changes.length > 1
+        ? `Changes requested ${round.sequence}`
+        : 'Changes requested',
+    waitingText: 'waiting for a reviewer',
+    at: toDate(round.at),
+    Icon: ChangesRequestedIcon,
+    by: round.actorLogin ?? null,
+  }));
+
+  if (changes.length === 0 && comment) {
+    stages.push({
+      label: 'Reviewed',
+      waitingText: 'waiting for a reviewer',
+      at: toDate(comment.at),
+      Icon: RateReviewOutlinedIcon,
+      by: comment.actorLogin ?? null,
+    });
+  }
+
+  if (stages.length === 0 && !approval) {
+    stages.push({
+      label: 'First review',
+      waitingText: 'waiting for a reviewer',
+      at: toDate(pr.firstReviewAt),
+      Icon: RateReviewOutlinedIcon,
+    });
+  }
+
+  stages.push({
+    label: 'Approved',
+    waitingText: 'review in progress',
+    at: toDate(approval?.at ?? pr.approvedAt),
+    Icon: CheckRoundedIcon,
+    by: approval?.actorLogin ?? null,
+  });
+
+  return stages;
+}
+
 function buildStages(pr: TimelinePr): Stage[] {
   const opened = toDate(pr.openedAt);
   const ready = toDate(pr.readyAt) ?? (pr.isDraft ? null : opened);
@@ -52,18 +115,7 @@ function buildStages(pr: TimelinePr): Stage[] {
       at: ready,
       Icon: VisibilityOutlinedIcon,
     },
-    {
-      label: 'First review',
-      waitingText: 'waiting for a reviewer',
-      at: toDate(pr.firstReviewAt),
-      Icon: RateReviewOutlinedIcon,
-    },
-    {
-      label: 'Approved',
-      waitingText: 'review in progress',
-      at: toDate(pr.approvedAt),
-      Icon: CheckRoundedIcon,
-    },
+    ...reviewStages(pr),
     {
       label: 'Merged',
       waitingText: 'ready to merge',
@@ -168,6 +220,20 @@ function StageNode({ stage, status }: { stage: Stage; status: StageStatus }) {
           {status === 'done' && stage.at ? format(stage.at, 'MMM d, HH:mm') : null}
           {status === 'skipped' ? 'skipped' : null}
         </Typography>
+        {status === 'done' && stage.by ? (
+          <Typography
+            variant="caption"
+            noWrap
+            sx={{
+              display: 'block',
+              lineHeight: 1.3,
+              fontSize: 10.5,
+              color: 'text.disabled',
+            }}
+          >
+            {stage.by}
+          </Typography>
+        ) : null}
       </Box>
     </Stack>
   );

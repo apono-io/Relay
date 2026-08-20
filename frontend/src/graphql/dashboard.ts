@@ -52,6 +52,14 @@ export const DASHBOARD_QUERY = gql`
         readyAt
         firstReviewAt
         approvedAt
+        area
+        sensitivity
+        reviewRounds {
+          sequence
+          outcome
+          at
+          actorLogin
+        }
       }
     }
   }

@@ -112,8 +112,9 @@ export function AreaRulesSettings() {
             Code areas
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Folders mapped to areas, each with a private sensitivity level. The assignment
-            engine reads this — developers never see it.
+            Folders mapped to areas, each with a sensitivity level. The assignment engine
+            weighs it, and pull request lists show it as dots — the level you set here is
+            never shown as a number.
           </Typography>
         </Box>
         {repos.length > 1 && repo && (

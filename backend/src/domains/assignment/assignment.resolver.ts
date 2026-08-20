@@ -8,6 +8,8 @@ import { SuggestionService } from './suggestion.service';
 import { AssignmentActionsService } from './assignment-actions.service';
 import { AppSettingsService } from './app-settings.service';
 import { AssignmentComparison } from './models/assignment-comparison.model';
+import { AssignmentPerformance } from './models/assignment-performance.model';
+import { AssignmentPerformanceService } from './assignment-performance.service';
 import {
   AssignmentSettings,
   RelayAssignment,
@@ -20,12 +22,19 @@ export class AssignmentResolver {
     private readonly actions: AssignmentActionsService,
     private readonly appSettings: AppSettingsService,
     private readonly people: PeopleService,
+    private readonly performanceService: AssignmentPerformanceService,
   ) {}
 
   @Query(() => AssignmentComparison, { name: 'assignmentComparison' })
   @RequirePermissions(Permissions.SETTINGS_ADMIN)
   assignmentComparison(): Promise<AssignmentComparison> {
     return this.suggestions.comparison();
+  }
+
+  @Query(() => AssignmentPerformance, { name: 'assignmentPerformance' })
+  @RequirePermissions(Permissions.SETTINGS_ADMIN)
+  assignmentPerformance(): Promise<AssignmentPerformance> {
+    return this.performanceService.performance();
   }
 
   @Query(() => [RelayAssignment], { name: 'relayAssignments' })

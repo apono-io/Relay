@@ -5,6 +5,7 @@ import { subHours } from 'date-fns';
 import { LoggerService } from '@/infrastructure/logging/logger.service';
 import { GitHubClient } from '@/infrastructure/clients/github.client';
 import { SyncStatusService } from '@/infrastructure/sync/sync-status.service';
+import { numberSetting } from '@/core/config/config-number';
 import { GithubEventNormalizer } from '@/domains/ingestion/github-event-normalizer.service';
 import { PrIngestService } from '@/domains/ingestion/pr-ingest.service';
 import { PrEventSource } from '@/domains/pull-requests/pr-enums';
@@ -18,6 +19,7 @@ export type GapFillSummary = {
 };
 
 const RECONCILE_BATCH_SIZE = 20;
+const SYNC_OVERLAP_HOURS = 1;
 
 @Injectable()
 export class GapFillJob implements OnModuleInit {
@@ -33,8 +35,9 @@ export class GapFillJob implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    const minutes = Number(
-      this.configService.get('GAP_FILL_INTERVAL_MINUTES') ?? 10,
+    const minutes = Math.max(
+      1,
+      numberSetting(this.configService, 'GAP_FILL_INTERVAL_MINUTES', 10),
     );
     const handle = setInterval(() => void this.run(), minutes * 60 * 1000);
     this.schedulerRegistry.addInterval('gap-fill', handle);
@@ -66,10 +69,7 @@ export class GapFillJob implements OnModuleInit {
   }
 
   async pull(now: Date = new Date()): Promise<GapFillSummary> {
-    const lookbackHours = Number(
-      this.configService.get('GAP_FILL_LOOKBACK_HOURS') ?? 24,
-    );
-    const cutoff = subHours(now, lookbackHours);
+    const cutoff = this.cutoffFor(now);
     const repos = await this.ingest.repos();
 
     const summary: GapFillSummary = {
@@ -87,8 +87,23 @@ export class GapFillJob implements OnModuleInit {
       summary.eventsInserted +=
         perRepo.eventsInserted + reconcile.eventsInserted;
     }
-    this.syncStatus.markSynced(now);
+    await this.syncStatus.markSynced(now);
     return summary;
+  }
+
+  private cutoffFor(now: Date): Date {
+    const lookbackHours = numberSetting(
+      this.configService,
+      'GAP_FILL_LOOKBACK_HOURS',
+      24,
+    );
+    const windowCutoff = subHours(now, lookbackHours);
+    const lastSynced = this.syncStatus.lastSyncedAt;
+    if (!lastSynced) {
+      return windowCutoff;
+    }
+    const resumeCutoff = subHours(lastSynced, SYNC_OVERLAP_HOURS);
+    return resumeCutoff < windowCutoff ? resumeCutoff : windowCutoff;
   }
 
   private async pullRepo(
