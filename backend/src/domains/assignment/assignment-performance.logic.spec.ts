@@ -45,6 +45,20 @@ describe('buildPerformance', () => {
     expect(result.totals.awaiting).toBe(1);
   });
 
+  it('manualAssigned counts comment-triggered assignments', () => {
+    const at = new Date('2026-03-02T12:00:00Z');
+    const result = buildPerformance(
+      [
+        row({ assignedAt: at, assignedTrigger: 'manual', shadow: true }),
+        row({ assignedAt: at, assignedTrigger: 'comment', shadow: true }),
+        row({ assignedAt: at, assignedTrigger: 'auto', shadow: true }),
+      ],
+      12,
+    );
+    expect(result.totals.manualAssigned).toBe(2);
+    expect(result.totals.autoAssigned).toBe(1);
+  });
+
   it('separates automatic from manual assignments', () => {
     const result = buildPerformance(
       [

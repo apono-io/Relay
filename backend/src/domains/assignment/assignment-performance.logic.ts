@@ -55,7 +55,8 @@ function buildTotals(rows: PerformanceRow[]): AssignmentTotals {
     autoAssigned: assignedRows.filter((row) => row.assignedTrigger === 'auto')
       .length,
     manualAssigned: assignedRows.filter(
-      (row) => row.assignedTrigger === 'manual',
+      (row) =>
+        row.assignedTrigger === 'manual' || row.assignedTrigger === 'comment',
     ).length,
     liveAssigned: assignedRows.filter((row) => row.shadow === false).length,
     peoplePicked: new Set(

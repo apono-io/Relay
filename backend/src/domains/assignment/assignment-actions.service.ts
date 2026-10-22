@@ -23,6 +23,8 @@ import {
 import { AppSettingsService } from './app-settings.service';
 import { RelayAssignment } from './models/relay-assignment.model';
 
+export type AssignTrigger = 'manual' | 'auto' | 'comment';
+
 @Injectable()
 export class AssignmentActionsService {
   constructor(
@@ -43,13 +45,14 @@ export class AssignmentActionsService {
     repo: string,
     number: number,
     byPersonId: string | null,
+    trigger: AssignTrigger = 'manual',
   ): Promise<RelayAssignment> {
     const pr = await this.prRepo.findOne({ where: { repo, number } });
     if (!pr) {
       throw new NotFoundException(`Relay does not know ${repo}#${number}.`);
     }
     const stats = await this.candidateStats.build();
-    return this.assignWithStats(pr, stats, byPersonId, 'manual', new Date());
+    return this.assignWithStats(pr, stats, byPersonId, trigger, new Date());
   }
 
   async autoAssign(now: Date = new Date()): Promise<number> {
@@ -136,7 +139,7 @@ export class AssignmentActionsService {
     pr: PullRequest,
     stats: CandidateStats,
     byPersonId: string | null,
-    trigger: 'manual' | 'auto',
+    trigger: AssignTrigger,
     now: Date,
   ): Promise<RelayAssignment> {
     if (pr.state !== PrState.OPEN) {

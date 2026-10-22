@@ -259,6 +259,21 @@ describe('AssignmentActionsService.assign claim', () => {
     expect(github.requestReviewers).not.toHaveBeenCalled();
   });
 
+  it('assign records the comment trigger', async () => {
+    const { service, prRepo, suggestionQb } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    const result = await service.assign(
+      'org/app',
+      11405,
+      'p-author',
+      'comment',
+    );
+    expect(result.trigger).toBe('comment');
+    expect(suggestionQb.set).toHaveBeenCalledWith(
+      expect.objectContaining({ assignedTrigger: 'comment' }),
+    );
+  });
+
   it('loses the claim race gracefully without touching GitHub', async () => {
     const { service, prRepo, suggestionQb, appSettings, github } = setup();
     prRepo.findOne.mockResolvedValue(openPr());
