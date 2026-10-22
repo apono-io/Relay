@@ -32,11 +32,15 @@ cite.
 | Assignment polish: a submitted review counts as engagement (no assign over an active review), actual reviewers shown on in-progress and merged rows, Approved chip once review is done, multi-reviewer pairs, per-pick "why" explanation, reset-assignment control | done |
 | Assignment hardening: repeat-pick damping (no back-to-back picks while someone comparable is free), race-safe atomic claim with GitHub rollback, self-review/duplicate-review stats fixes, honest reason phrases, NaN-safe config reads, full unit coverage of the actions service | done — 161 backend tests |
 | Focus batch: My PRs is a my-turn checklist, repo chip + sensitivity dots on every PR table, approved PRs leave My Reviews, review rounds named in the timeline, menu split into personal / Team, email-only Add person, Assignment-engine performance view | done — 191 backend tests |
+| `@relay assign` / `@relay skip` PR comment commands: read in the one-minute sync, author-only, skip blocks auto-assign, replies on the PR only while live assignment is on | done — 240 backend tests |
 
 Known limits:
 
 - A token already issued keeps its role for up to one day; deactivating a person blocks
   the next sign-in, not the current session.
+- `@relay` commands take effect within one sync interval (one minute locally), are
+  ignored once older than `COMMAND_MAX_AGE_HOURS` (default 24), and post no reply on
+  GitHub while `assignment.actuallyAssign` is off.
 - Webhooks exist only as the deployed path; locally the gap-fill is the live mechanism
   (`GAP_FILL_INTERVAL_MINUTES`, set to 1 locally, default 10 in code). It resumes from a
   watermark in `app_settings`, so downtime of any length self-heals on the first run after

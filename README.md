@@ -24,6 +24,9 @@ frontend, Google OAuth for login, and Tilt for local orchestration.
   checklist of the pull requests where it is genuinely your turn (merge it, get a
   reviewer, fix the checks, address feedback), one action button each, with everything
   that waits on someone else folded away.
+- **`@relay` comment commands** — the PR author comments `@relay assign` to have Relay
+  pick a good-fit reviewer, or `@relay skip` to keep Relay off that PR. Relay reads them
+  in the one-minute sync and replies on the PR once live assignment is on.
 - **My Reviews** — the reviews still open for you; a PR you have approved drops out.
 - **People & roster** (in System settings, admins only) — people seeded from commit
   author emails, GitHub identity linking, manual entry, and an active/disabled switch
