@@ -51,6 +51,36 @@ type ExternalIdInput =
       occurredAt: Date;
     };
 
+export type RelayCommand = 'assign' | 'skip';
+
+const COMMAND_LINE = /^[@/]relay\s+(assign|skip)\b/i;
+const FENCE_LINE = /^(```|~~~)/;
+
+export function parseRelayCommand(
+  body: string | null | undefined,
+): RelayCommand | null {
+  let inFence = false;
+  for (const rawLine of (body ?? '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (FENCE_LINE.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    const match = inFence ? null : COMMAND_LINE.exec(line);
+    if (match) {
+      return match[1].toLowerCase() as RelayCommand;
+    }
+  }
+  return null;
+}
+
+const commandPayload = (
+  body: unknown,
+): { command: RelayCommand } | undefined => {
+  const command = parseRelayCommand(body as string | undefined);
+  return command ? { command } : undefined;
+};
+
 const iso = (value: unknown): Date => new Date(value as string);
 const isBotLogin = (login: string | undefined): boolean =>
   !!login && login.endsWith('[bot]');
@@ -184,11 +214,19 @@ export class GithubEventNormalizer {
       });
     }
 
-    for (const comment of prNode.comments?.nodes ?? []) {
+    const comments = new Map<string, Record<string, any>>();
+    for (const comment of [
+      ...(prNode.comments?.nodes ?? []),
+      ...(prNode.recentComments?.nodes ?? []),
+    ]) {
+      comments.set(comment.id, comment);
+    }
+    for (const comment of comments.values()) {
       events.push({
         ...base,
         type: PrEventType.COMMENT,
         actorLogin: comment.author?.login,
+        payload: commandPayload(comment.body),
         occurredAt: iso(comment.createdAt),
         externalId: this.buildExternalId({
           kind: 'comment',
@@ -470,6 +508,7 @@ export class GithubEventNormalizer {
         prNodeId: pr.node_id,
         type: PrEventType.COMMENT,
         actorLogin: comment.user?.login,
+        payload: commandPayload(comment.body),
         occurredAt: iso(comment.created_at),
         source: PrEventSource.WEBHOOK,
         externalId: this.buildExternalId({

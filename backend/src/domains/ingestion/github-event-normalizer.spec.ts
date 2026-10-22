@@ -1,4 +1,7 @@
-import { GithubEventNormalizer } from './github-event-normalizer.service';
+import {
+  GithubEventNormalizer,
+  parseRelayCommand,
+} from './github-event-normalizer.service';
 import { PrEventType } from '@/domains/pull-requests/pr-enums';
 
 const REPO = 'apono-io/apono-mono';
@@ -140,6 +143,107 @@ describe('GithubEventNormalizer', () => {
     it('defaults file paths to an empty list when the node has none', () => {
       const result = normalizer.normalizeBackfillNode(REPO, backfillNode());
       expect(result.pullRequest.filePaths).toEqual([]);
+    });
+  });
+
+  describe('@relay commands in comments', () => {
+    it.each([
+      ['@relay assign', 'assign'],
+      ['@Relay   ASSIGN please', 'assign'],
+      ['/relay skip', 'skip'],
+      ['thanks!\n@relay assign', 'assign'],
+      ['  @relay skip', 'skip'],
+      ["don't @relay assign yet", null],
+      ['> @relay assign', null],
+      ['```\n@relay assign\n```', null],
+      ['@relayer assign', null],
+      ['@relay unknown', null],
+      ['@relay assignment', null],
+      [null, null],
+    ])('parses %j as %j', (body, expected) => {
+      expect(parseRelayCommand(body)).toBe(expected);
+    });
+
+    it('records the command in the comment payload', () => {
+      const { events } = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({
+          comments: {
+            nodes: [
+              {
+                id: 'C1',
+                createdAt: READY_AT,
+                author: { login: 'dev' },
+                body: '@relay assign',
+              },
+            ],
+          },
+        }),
+      );
+      const comments = events.filter((e) => e.type === PrEventType.COMMENT);
+      expect(comments).toHaveLength(1);
+      expect(comments[0].payload).toEqual({ command: 'assign' });
+      expect(comments[0].externalId).toBe('comment:C1');
+    });
+
+    it('leaves a plain comment without a payload', () => {
+      const { events } = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({
+          comments: {
+            nodes: [
+              {
+                id: 'C1',
+                createdAt: READY_AT,
+                author: { login: 'dev' },
+                body: 'looks good',
+              },
+            ],
+          },
+        }),
+      );
+      const comment = events.find((e) => e.type === PrEventType.COMMENT);
+      expect(comment?.payload).toBeUndefined();
+    });
+
+    it('merges recentComments without duplicating events', () => {
+      const c1 = {
+        id: 'C1',
+        createdAt: READY_AT,
+        author: { login: 'dev' },
+        body: 'first',
+      };
+      const c2 = {
+        id: 'C2',
+        createdAt: READY_AT,
+        author: { login: 'dev' },
+        body: '@relay skip',
+      };
+      const { events } = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({
+          comments: { nodes: [c1] },
+          recentComments: { nodes: [c1, c2] },
+        }),
+      );
+      const ids = events
+        .filter((e) => e.type === PrEventType.COMMENT)
+        .map((e) => e.externalId);
+      expect(ids).toEqual(['comment:C1', 'comment:C2']);
+    });
+
+    it('records the command from an issue_comment webhook', () => {
+      const [event] = normalizer.normalizeWebhook('issue_comment', {
+        repository: { full_name: REPO },
+        issue: { number: 42, node_id: PR_NODE },
+        comment: {
+          node_id: 'C9',
+          user: { login: 'dev' },
+          created_at: READY_AT,
+          body: '/relay assign',
+        },
+      });
+      expect(event.payload).toEqual({ command: 'assign' });
     });
   });
 
