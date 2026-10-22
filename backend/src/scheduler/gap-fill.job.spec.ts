@@ -30,6 +30,8 @@ type Deps = {
   configured?: boolean;
   fetchFails?: boolean;
   commandsFail?: boolean;
+  config?: Record<string, unknown>;
+  holdFetch?: Promise<void>;
 };
 
 function build(deps: Deps = {}) {
@@ -40,6 +42,7 @@ function build(deps: Deps = {}) {
   const staleNodesByRepo = deps.staleNodes ?? {};
 
   const fetchCalls: { repo: string; opts: any }[] = [];
+  const callLog: string[] = [];
   const fetchByNumberCalls: { repo: string; numbers: number[] }[] = [];
   const persistCalls: {
     header: NormalizedPullRequest;
@@ -49,15 +52,20 @@ function build(deps: Deps = {}) {
 
   const configService = {
     get: (key: string) =>
-      key === 'GAP_FILL_LOOKBACK_HOURS' ? lookbackHours : undefined,
+      key === 'GAP_FILL_LOOKBACK_HOURS' ? lookbackHours : deps.config?.[key],
   };
 
   const github = {
     isConfigured: () => deps.configured ?? true,
     fetchPullRequestTimelines: (repo: string, opts: any) => {
       fetchCalls.push({ repo, opts });
+      callLog.push('fetch');
       if (deps.fetchFails) {
         return Promise.reject(new Error('GitHub is down'));
+      }
+      if (deps.holdFetch) {
+        const queue = pagesByRepo[repo] ?? [page([])];
+        return deps.holdFetch.then(() => queue[0]);
       }
       const queue = pagesByRepo[repo] ?? [page([])];
       const idx = fetchCalls.filter((c) => c.repo === repo).length - 1;
@@ -65,6 +73,7 @@ function build(deps: Deps = {}) {
     },
     fetchPullRequestTimelinesByNumbers: (repo: string, numbers: number[]) => {
       fetchByNumberCalls.push({ repo, numbers });
+      callLog.push('reconcile');
       const nodes = (staleNodesByRepo[repo] ?? []).filter((n) =>
         numbers.includes(n.number),
       );
@@ -98,16 +107,17 @@ function build(deps: Deps = {}) {
 
   const logger = { log: () => {}, warn: () => {}, error: () => {} };
   const commands = {
-    processPending: jest.fn(() =>
-      deps.commandsFail
+    processPending: jest.fn(() => {
+      callLog.push('commands');
+      return deps.commandsFail
         ? Promise.reject(new Error('command store unavailable'))
         : Promise.resolve({
             assigned: 0,
             skipped: 0,
             refused: 0,
             notAuthor: 0,
-          }),
-    ),
+          });
+    }),
   };
 
   const settingsRepo = {
@@ -116,7 +126,7 @@ function build(deps: Deps = {}) {
     create: (value: unknown) => value,
   };
   const syncStatus = new SyncStatusService(settingsRepo as never);
-  const schedulerRegistry = { addInterval: () => {} };
+  const schedulerRegistry = { addInterval: jest.fn() };
   const job = new GapFillJob(
     configService as any,
     github as any,
@@ -135,6 +145,7 @@ function build(deps: Deps = {}) {
     persistCalls,
     syncStatus,
     commands,
+    callLog,
   };
 }
 
@@ -377,5 +388,87 @@ describe('GapFillJob.run and @relay commands', () => {
     const { job, commands } = build();
     await job.runNow();
     expect(commands.processPending).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('GapFillJob speed', () => {
+  it('handles a new command as soon as its page is ingested', async () => {
+    const { job, callLog } = build({
+      pages: {
+        'apono-io/apono-mono': [
+          page([node(1, '2026-07-07T11:59:00Z')], true, 'c1'),
+          page([node(2, '2026-07-07T11:00:00Z')]),
+        ],
+      },
+      staleNumbers: { 'apono-io/apono-mono': [9] },
+      insertedPerPr: 1,
+    });
+    await job.pull(NOW);
+    expect(callLog.slice(0, 3)).toEqual(['fetch', 'commands', 'fetch']);
+    expect(callLog.indexOf('commands')).toBeLessThan(
+      callLog.indexOf('reconcile'),
+    );
+  });
+
+  it('does not look for commands after a page that stored nothing new', async () => {
+    const { job, commands } = build({
+      pages: {
+        'apono-io/apono-mono': [page([node(1, '2026-07-07T11:59:00Z')])],
+      },
+      insertedPerPr: 0,
+    });
+    await job.pull(NOW);
+    expect(commands.processPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-checks older open PRs at most every 10 minutes', async () => {
+    const { job, fetchByNumberCalls } = build({
+      staleNumbers: { 'apono-io/apono-mono': [9] },
+    });
+    await job.pull(NOW);
+    await job.pull(new Date(NOW.getTime() + 60_000));
+    expect(fetchByNumberCalls).toHaveLength(1);
+    await job.pull(new Date(NOW.getTime() + 10 * 60_000));
+    expect(fetchByNumberCalls).toHaveLength(2);
+  });
+
+  it('skips a scheduled run while the previous one is still going', async () => {
+    let release!: () => void;
+    const holdFetch = new Promise<void>((resolve) => (release = resolve));
+    const { job, fetchCalls } = build({ holdFetch });
+    const first = job.run();
+    await job.run();
+    expect(fetchCalls).toHaveLength(1);
+    release();
+    await first;
+  });
+
+  it('a manual sync waits for the run in flight instead of starting another', async () => {
+    let release!: () => void;
+    const holdFetch = new Promise<void>((resolve) => (release = resolve));
+    const { job, fetchCalls, syncStatus } = build({ holdFetch });
+    const scheduled = job.run();
+    const manual = job.runNow();
+    release();
+    await scheduled;
+    await expect(manual).resolves.toEqual(syncStatus.lastSyncedAt);
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  it('reads the interval in seconds when GAP_FILL_INTERVAL_SECONDS is set', () => {
+    jest.useFakeTimers();
+    const spy = jest.spyOn(global, 'setInterval');
+    try {
+      const { job } = build({
+        config: { GAP_FILL_INTERVAL_SECONDS: 20 },
+        configured: false,
+      });
+      job.onModuleInit();
+      expect(spy).toHaveBeenCalledWith(expect.any(Function), 20_000);
+    } finally {
+      spy.mockRestore();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
   });
 });

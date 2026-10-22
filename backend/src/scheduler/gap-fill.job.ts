@@ -21,9 +21,13 @@ export type GapFillSummary = {
 
 const RECONCILE_BATCH_SIZE = 20;
 const SYNC_OVERLAP_HOURS = 1;
+const MIN_INTERVAL_SECONDS = 5;
 
 @Injectable()
 export class GapFillJob implements OnModuleInit {
+  private inFlight: Promise<void> | null = null;
+  private lastReconciledAt: Date | null = null;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly github: GitHubClient,
@@ -37,38 +41,75 @@ export class GapFillJob implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    const minutes = Math.max(
-      1,
-      numberSetting(this.configService, 'GAP_FILL_INTERVAL_MINUTES', 10),
+    const handle = setInterval(
+      () => void this.run(),
+      this.intervalSeconds() * 1000,
     );
-    const handle = setInterval(() => void this.run(), minutes * 60 * 1000);
     this.schedulerRegistry.addInterval('gap-fill', handle);
     void this.run();
   }
 
+  private intervalSeconds(): number {
+    const seconds = numberSetting(
+      this.configService,
+      'GAP_FILL_INTERVAL_SECONDS',
+      0,
+    );
+    if (seconds > 0) {
+      return Math.max(MIN_INTERVAL_SECONDS, seconds);
+    }
+    const minutes = numberSetting(
+      this.configService,
+      'GAP_FILL_INTERVAL_MINUTES',
+      10,
+    );
+    return Math.max(1, minutes) * 60;
+  }
+
+  // A tick that lands while a sync is still running is skipped, so runs never overlap.
   async run(): Promise<void> {
-    if (!this.github.isConfigured()) {
+    if (!this.github.isConfigured() || this.inFlight) {
       return;
     }
-    try {
-      const summary = await this.pull();
-      this.logger.log(`Gap-fill done: ${JSON.stringify(summary)}`);
-    } catch (error) {
-      this.logger.error(
-        `Gap-fill failed: ${(error as Error).message}`,
-        (error as Error).stack,
-        GapFillJob.name,
-      );
-      return;
-    }
-    await this.processCommands();
+    this.inFlight = this.pull()
+      .then((summary) => {
+        this.logger.log(`Gap-fill done: ${JSON.stringify(summary)}`);
+      })
+      .catch((error: Error) => {
+        this.logger.error(
+          `Gap-fill failed: ${error.message}`,
+          error.stack,
+          GapFillJob.name,
+        );
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
+    await this.inFlight;
   }
 
   async runNow(): Promise<Date | null> {
-    if (this.github.isConfigured()) {
-      const summary = await this.pull();
-      this.logger.log(`Manual sync done: ${JSON.stringify(summary)}`);
-      await this.processCommands();
+    if (!this.github.isConfigured()) {
+      return this.syncStatus.lastSyncedAt;
+    }
+    if (this.inFlight) {
+      await this.inFlight;
+      return this.syncStatus.lastSyncedAt;
+    }
+    let failure: Error | null = null;
+    this.inFlight = this.pull()
+      .then((summary) => {
+        this.logger.log(`Manual sync done: ${JSON.stringify(summary)}`);
+      })
+      .catch((error: Error) => {
+        failure = error;
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
+    await this.inFlight;
+    if (failure) {
+      throw failure;
     }
     return this.syncStatus.lastSyncedAt;
   }
@@ -98,17 +139,38 @@ export class GapFillJob implements OnModuleInit {
       prsReconciled: 0,
       eventsInserted: 0,
     };
+    const reconcileDue = this.reconcileDue(now);
     for (const repo of repos) {
       const perRepo = await this.pullRepo(repo, cutoff);
-      const reconcile = await this.reconcileRepo(repo, cutoff);
+      const reconcile = reconcileDue
+        ? await this.reconcileRepo(repo, cutoff)
+        : { prsReconciled: 0, eventsInserted: 0 };
       summary.reposProcessed += 1;
       summary.prsScanned += perRepo.prsScanned;
       summary.prsReconciled += reconcile.prsReconciled;
       summary.eventsInserted +=
         perRepo.eventsInserted + reconcile.eventsInserted;
     }
+    if (reconcileDue) {
+      this.lastReconciledAt = now;
+    }
+    await this.processCommands();
     await this.syncStatus.markSynced(now);
     return summary;
+  }
+
+  // Re-checking every older open PR is the slow part of a sync, so it runs on its own,
+  // longer cadence while the recent-PR scan runs on every tick.
+  private reconcileDue(now: Date): boolean {
+    const minutes = numberSetting(
+      this.configService,
+      'RECONCILE_INTERVAL_MINUTES',
+      10,
+    );
+    return (
+      !this.lastReconciledAt ||
+      now.getTime() - this.lastReconciledAt.getTime() >= minutes * 60 * 1000
+    );
   }
 
   private cutoffFor(now: Date): Date {
@@ -141,6 +203,7 @@ export class GapFillJob implements OnModuleInit {
         orderBy: 'UPDATED_AT',
       });
       let reachedCutoff = false;
+      let pageInserted = 0;
 
       for (const node of page.nodes) {
         if (new Date(node.updatedAt) < cutoff) {
@@ -151,12 +214,17 @@ export class GapFillJob implements OnModuleInit {
           repo,
           node,
         );
-        eventsInserted += await this.ingest.persistPr(
+        pageInserted += await this.ingest.persistPr(
           pullRequest,
           events,
           PrEventSource.GAP_FILL,
         );
         prsScanned += 1;
+      }
+      eventsInserted += pageInserted;
+      // A fresh @relay comment lands on the first pages, so act on it right away.
+      if (pageInserted > 0) {
+        await this.processCommands();
       }
 
       if (reachedCutoff || !page.pageInfo.hasNextPage) {
