@@ -28,6 +28,8 @@ type Deps = {
   staleNodes?: Record<string, any[]>;
   insertedPerPr?: number;
   configured?: boolean;
+  fetchFails?: boolean;
+  commandsFail?: boolean;
 };
 
 function build(deps: Deps = {}) {
@@ -54,6 +56,9 @@ function build(deps: Deps = {}) {
     isConfigured: () => deps.configured ?? true,
     fetchPullRequestTimelines: (repo: string, opts: any) => {
       fetchCalls.push({ repo, opts });
+      if (deps.fetchFails) {
+        return Promise.reject(new Error('GitHub is down'));
+      }
       const queue = pagesByRepo[repo] ?? [page([])];
       const idx = fetchCalls.filter((c) => c.repo === repo).length - 1;
       return Promise.resolve(queue[Math.min(idx, queue.length - 1)]);
@@ -91,7 +96,19 @@ function build(deps: Deps = {}) {
     },
   };
 
-  const logger = { log: () => {} };
+  const logger = { log: () => {}, warn: () => {}, error: () => {} };
+  const commands = {
+    processPending: jest.fn(() =>
+      deps.commandsFail
+        ? Promise.reject(new Error('command store unavailable'))
+        : Promise.resolve({
+            assigned: 0,
+            skipped: 0,
+            refused: 0,
+            notAuthor: 0,
+          }),
+    ),
+  };
 
   const settingsRepo = {
     findOne: () => Promise.resolve(null),
@@ -109,8 +126,16 @@ function build(deps: Deps = {}) {
     logger as any,
     syncStatus,
     schedulerRegistry as any,
+    commands as any,
   );
-  return { job, fetchCalls, fetchByNumberCalls, persistCalls, syncStatus };
+  return {
+    job,
+    fetchCalls,
+    fetchByNumberCalls,
+    persistCalls,
+    syncStatus,
+    commands,
+  };
 }
 
 describe('GapFillJob.pull', () => {
@@ -326,5 +351,31 @@ describe('GapFillJob.runNow', () => {
     const syncedAt = await job.runNow();
     expect(fetchCalls).toHaveLength(0);
     expect(syncedAt).toBeNull();
+  });
+});
+
+describe('GapFillJob.run and @relay commands', () => {
+  it('processes commands after a successful pull', async () => {
+    const { job, commands } = build();
+    await job.run();
+    expect(commands.processPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips commands when the pull fails', async () => {
+    const { job, commands } = build({ fetchFails: true });
+    await job.run();
+    expect(commands.processPending).not.toHaveBeenCalled();
+  });
+
+  it('a command failure does not fail the sync', async () => {
+    const { job, syncStatus } = build({ commandsFail: true });
+    await expect(job.run()).resolves.toBeUndefined();
+    expect(syncStatus.lastSyncedAt).not.toBeNull();
+  });
+
+  it('runNow also processes commands', async () => {
+    const { job, commands } = build();
+    await job.runNow();
+    expect(commands.processPending).toHaveBeenCalledTimes(1);
   });
 });

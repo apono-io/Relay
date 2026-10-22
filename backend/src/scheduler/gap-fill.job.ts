@@ -10,6 +10,7 @@ import { GithubEventNormalizer } from '@/domains/ingestion/github-event-normaliz
 import { PrIngestService } from '@/domains/ingestion/pr-ingest.service';
 import { PrEventSource } from '@/domains/pull-requests/pr-enums';
 import { PullRequestsService } from '@/domains/pull-requests/pull-requests.service';
+import { RelayCommandService } from '@/domains/assignment/relay-command.service';
 
 export type GapFillSummary = {
   reposProcessed: number;
@@ -32,6 +33,7 @@ export class GapFillJob implements OnModuleInit {
     private readonly logger: LoggerService,
     private readonly syncStatus: SyncStatusService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly commands: RelayCommandService,
   ) {}
 
   onModuleInit(): void {
@@ -57,15 +59,33 @@ export class GapFillJob implements OnModuleInit {
         (error as Error).stack,
         GapFillJob.name,
       );
+      return;
     }
+    await this.processCommands();
   }
 
   async runNow(): Promise<Date | null> {
     if (this.github.isConfigured()) {
       const summary = await this.pull();
       this.logger.log(`Manual sync done: ${JSON.stringify(summary)}`);
+      await this.processCommands();
     }
     return this.syncStatus.lastSyncedAt;
+  }
+
+  private async processCommands(): Promise<void> {
+    try {
+      const summary = await this.commands.processPending();
+      if (Object.values(summary).some((count) => count > 0)) {
+        this.logger.log(`Relay commands: ${JSON.stringify(summary)}`);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Relay commands failed: ${(error as Error).message}`,
+        (error as Error).stack,
+        GapFillJob.name,
+      );
+    }
   }
 
   async pull(now: Date = new Date()): Promise<GapFillSummary> {
