@@ -57,15 +57,18 @@ export class RelayCommandService {
       'COMMAND_MAX_AGE_HOURS',
       24,
     );
+    const since = subHours(now, maxAgeHours);
     const pending = await this.eventRepo
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.pullRequest', 'pr')
       .where('event.type = :type', { type: PrEventType.COMMENT })
       .andWhere(`event.payload->>'command' IS NOT NULL`)
       .andWhere(`event.payload->>'handledAt' IS NULL`)
-      .andWhere('event."occurredAt" >= :since', {
-        since: subHours(now, maxAgeHours),
-      })
+      // A stale assign could act on an old comment; a stale skip only writes Relay state.
+      .andWhere(
+        `(event.payload->>'command' = 'skip' OR event."occurredAt" >= :since)`,
+        { since },
+      )
       .orderBy('event."occurredAt"', 'ASC')
       .getMany();
     if (pending.length === 0) {
@@ -80,7 +83,7 @@ export class RelayCommandService {
       }
       const { login, ...result } = await this.handle(event, stats);
       await this.mergePayload(event.id, result);
-      if (live) {
+      if (live && event.occurredAt >= since) {
         await this.reply(event, result, login);
       }
       if (result.outcome === 'not-author') {

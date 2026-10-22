@@ -183,11 +183,11 @@ describe('RelayCommandService.processPending', () => {
     expect(outcomePatches(qb)).toEqual([{ outcome: 'skipped' }]);
   });
 
-  it('ignores commands older than the max age', async () => {
+  it('ignores assign commands older than the max age but keeps every skip', async () => {
     const { service, qb } = setup();
     await service.processPending(NOW);
     expect(qb.andWhere).toHaveBeenCalledWith(
-      expect.stringContaining('occurredAt'),
+      expect.stringMatching(/'skip'.*occurredAt|occurredAt.*'skip'/s),
       { since: subHours(NOW, 24) },
     );
   });
@@ -280,5 +280,16 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(summary.assigned).toBe(1);
     expect(outcomePatches(qb)).toEqual([{ outcome: 'assigned' }]);
     expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('records a stale skip without replying', async () => {
+    const { service, qb, appSettings, github } = setup([
+      commandEvent('skip', 'author', { occurredAt: subHours(NOW, 30) }),
+    ]);
+    appSettings.actuallyAssign.mockResolvedValue(true);
+    const summary = await service.processPending(NOW);
+    expect(summary.skipped).toBe(1);
+    expect(outcomePatches(qb)).toEqual([{ outcome: 'skipped' }]);
+    expect(github.createIssueComment).not.toHaveBeenCalled();
   });
 });
