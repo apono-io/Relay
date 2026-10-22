@@ -12,6 +12,7 @@ import { AssignmentActionsService } from './assignment-actions.service';
 import { AppSettingsService } from './app-settings.service';
 import { AssignmentPerformanceService } from './assignment-performance.service';
 import { AssignmentResolver } from './assignment.resolver';
+import { RelayCommandService } from './relay-command.service';
 
 @Module({
   imports: [
@@ -31,7 +32,8 @@ import { AssignmentResolver } from './assignment.resolver';
     AppSettingsService,
     AssignmentPerformanceService,
     AssignmentResolver,
+    RelayCommandService,
   ],
-  exports: [SuggestionService, AssignmentActionsService],
+  exports: [SuggestionService, AssignmentActionsService, RelayCommandService],
 })
 export class AssignmentModule {}
