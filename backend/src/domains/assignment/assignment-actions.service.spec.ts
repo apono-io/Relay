@@ -121,6 +121,7 @@ function setup() {
   const eventQb = chainableQb();
   const eventRepo = {
     createQueryBuilder: jest.fn().mockReturnValue(eventQb),
+    query: jest.fn().mockResolvedValue([]),
   };
   const candidateStats = {
     build: jest.fn().mockResolvedValue(statsWith(reviewerPool())),
@@ -338,6 +339,27 @@ describe('AssignmentActionsService.autoAssign', () => {
     const assigned = await service.autoAssign(NOW);
     expect(assigned).toBe(0);
     expect(suggestionQb.set).not.toHaveBeenCalled();
+  });
+
+  it('autoAssign leaves a skipped PR alone', async () => {
+    const { service, prQb, eventRepo, suggestionQb } = setup();
+    prQb.getMany.mockResolvedValue([openPr()]);
+    eventRepo.query.mockResolvedValue([
+      { prId: 'pr-uuid-1', outcome: 'skipped' },
+    ]);
+    const assigned = await service.autoAssign(NOW);
+    expect(assigned).toBe(0);
+    expect(suggestionQb.set).not.toHaveBeenCalled();
+  });
+
+  it('a later @relay assign lifts the skip', async () => {
+    const { service, prQb, eventRepo } = setup();
+    prQb.getMany.mockResolvedValue([openPr()]);
+    eventRepo.query.mockResolvedValue([
+      { prId: 'pr-uuid-1', outcome: 'assigned' },
+    ]);
+    const assigned = await service.autoAssign(NOW);
+    expect(assigned).toBe(1);
   });
 
   it('skips pull requests that already carry an assignment', async () => {

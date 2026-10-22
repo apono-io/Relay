@@ -97,10 +97,13 @@ export class AssignmentActionsService {
       select: ['prId'],
     });
     const assignedPrIds = new Set(alreadyAssigned.map((row) => row.prId));
+    const skippedPrIds = await this.skippedPrIds(
+      targets.map((target) => target.id),
+    );
 
     let assigned = 0;
     for (const pr of targets) {
-      if (assignedPrIds.has(pr.id)) {
+      if (assignedPrIds.has(pr.id) || skippedPrIds.has(pr.id)) {
         continue;
       }
       const author = stats.personByLogin.get(pr.authorLogin.toLowerCase());
@@ -133,6 +136,25 @@ export class AssignmentActionsService {
       }
     }
     return assigned;
+  }
+
+  // A PR is skipped while the author's latest handled @relay command is a skip.
+  private async skippedPrIds(prIds: string[]): Promise<Set<string>> {
+    if (prIds.length === 0) {
+      return new Set();
+    }
+    const rows: { prId: string; outcome: string }[] =
+      await this.eventRepo.query(
+        `SELECT DISTINCT ON ("prId") "prId", payload->>'outcome' AS outcome
+         FROM pr_events
+         WHERE "prId" = ANY($1::uuid[]) AND type = $2
+           AND payload->>'outcome' IN ('assigned', 'skipped', 'refused')
+         ORDER BY "prId", "occurredAt" DESC`,
+        [prIds, PrEventType.COMMENT],
+      );
+    return new Set(
+      rows.filter((row) => row.outcome === 'skipped').map((row) => row.prId),
+    );
   }
 
   private async assignWithStats(
