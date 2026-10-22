@@ -229,6 +229,25 @@ ${PR_NODE_FRAGMENT}`;
     }
   }
 
+  async createIssueComment(
+    repo: string,
+    number: number,
+    body: string,
+  ): Promise<void> {
+    try {
+      await this.rest('post', `/repos/${repo}/issues/${number}/comments`, {
+        body,
+      });
+    } catch (error) {
+      const detail =
+        (error as { response?: { data?: { message?: string } } }).response?.data
+          ?.message ?? (error as Error).message;
+      throw new Error(
+        `GitHub refused the comment on ${repo}#${number}: ${detail}`,
+      );
+    }
+  }
+
   async removeRequestedReviewers(
     repo: string,
     prNumber: number,

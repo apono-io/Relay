@@ -10,6 +10,7 @@ import { Repository } from 'typeorm';
 import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { PrEventType } from '@/domains/pull-requests/pr-enums';
 import { RelayCommand } from '@/domains/ingestion/github-event-normalizer.service';
+import { GitHubClient } from '@/infrastructure/clients/github.client';
 import { LoggerService } from '@/infrastructure/logging/logger.service';
 import { numberSetting } from '@/core/config/config-number';
 import {
@@ -17,6 +18,7 @@ import {
   CandidateStatsService,
 } from './candidate-stats.service';
 import { AssignmentActionsService } from './assignment-actions.service';
+import { AppSettingsService } from './app-settings.service';
 
 export type CommandOutcome = 'assigned' | 'skipped' | 'refused' | 'not-author';
 
@@ -28,6 +30,7 @@ export type CommandSummary = {
 };
 
 type CommandResult = { outcome: CommandOutcome; reason?: string };
+type HandledCommand = CommandResult & { login?: string };
 
 @Injectable()
 export class RelayCommandService {
@@ -36,6 +39,8 @@ export class RelayCommandService {
     private readonly eventRepo: Repository<PrEvent>,
     private readonly candidateStats: CandidateStatsService,
     private readonly actions: AssignmentActionsService,
+    private readonly appSettings: AppSettingsService,
+    private readonly github: GitHubClient,
     private readonly configService: ConfigService,
     private readonly logger: LoggerService,
   ) {}
@@ -68,12 +73,16 @@ export class RelayCommandService {
     }
 
     const stats = await this.candidateStats.build(now);
+    const live = await this.appSettings.actuallyAssign();
     for (const event of pending) {
       if (!(await this.claim(event.id, now))) {
         continue;
       }
-      const result = await this.handle(event, stats);
+      const { login, ...result } = await this.handle(event, stats);
       await this.mergePayload(event.id, result);
+      if (live) {
+        await this.reply(event, result, login);
+      }
       if (result.outcome === 'not-author') {
         summary.notAuthor += 1;
       } else {
@@ -86,7 +95,7 @@ export class RelayCommandService {
   private async handle(
     event: PrEvent,
     stats: CandidateStats,
-  ): Promise<CommandResult> {
+  ): Promise<HandledCommand> {
     const pr = event.pullRequest;
     const commenter = stats.personByLogin.get(
       (event.actorLogin ?? '').toLowerCase(),
@@ -101,8 +110,13 @@ export class RelayCommandService {
       return { outcome: 'skipped' };
     }
     try {
-      await this.actions.assign(pr.repo, pr.number, author.personId, 'comment');
-      return { outcome: 'assigned' };
+      const assignment = await this.actions.assign(
+        pr.repo,
+        pr.number,
+        author.personId,
+        'comment',
+      );
+      return { outcome: 'assigned', login: assignment.login };
     } catch (error) {
       const reason =
         error instanceof BadRequestException ||
@@ -114,6 +128,26 @@ export class RelayCommandService {
         RelayCommandService.name,
       );
       return { outcome: 'refused', reason };
+    }
+  }
+
+  private async reply(
+    event: PrEvent,
+    result: CommandResult,
+    login: string | undefined,
+  ): Promise<void> {
+    const body = replyText(result, login);
+    if (!body) {
+      return;
+    }
+    const pr = event.pullRequest;
+    try {
+      await this.github.createIssueComment(pr.repo, pr.number, body);
+    } catch (error) {
+      this.logger.warn(
+        `Could not reply on ${pr.repo}#${pr.number}: ${(error as Error).message}`,
+        RelayCommandService.name,
+      );
     }
   }
 
@@ -139,5 +173,21 @@ export class RelayCommandService {
       .setParameter('patch', JSON.stringify(patch))
       .where('id = :id', { id: eventId })
       .execute();
+  }
+}
+
+function replyText(
+  result: CommandResult,
+  login: string | undefined,
+): string | null {
+  switch (result.outcome) {
+    case 'assigned':
+      return `Requested a review from @${login}, a good fit for this change.`;
+    case 'skipped':
+      return 'Got it. Relay will stay off this pull request.';
+    case 'refused':
+      return `Relay didn't pick a reviewer: ${result.reason}`;
+    case 'not-author':
+      return null;
   }
 }
