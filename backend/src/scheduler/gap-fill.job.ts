@@ -15,6 +15,11 @@ import { RelayCommandService } from '@/domains/assignment/relay-command.service'
 export type GapFillSummary = {
   reposProcessed: number;
   prsScanned: number;
+  eventsInserted: number;
+};
+
+export type ReconcileSummary = {
+  reposProcessed: number;
   prsReconciled: number;
   eventsInserted: number;
 };
@@ -26,7 +31,7 @@ const MIN_INTERVAL_SECONDS = 5;
 @Injectable()
 export class GapFillJob implements OnModuleInit {
   private inFlight: Promise<void> | null = null;
-  private lastReconciledAt: Date | null = null;
+  private reconcileInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -46,7 +51,60 @@ export class GapFillJob implements OnModuleInit {
       this.intervalSeconds() * 1000,
     );
     this.schedulerRegistry.addInterval('gap-fill', handle);
+    // Re-checking every older open PR is slow, so it runs on its own timer and never
+    // holds up the recent-PR scan that @relay commands ride on.
+    const reconcileHandle = setInterval(
+      () => void this.runReconcile(),
+      this.reconcileMinutes() * 60 * 1000,
+    );
+    this.schedulerRegistry.addInterval('gap-fill-reconcile', reconcileHandle);
     void this.run();
+    void this.runReconcile();
+  }
+
+  private reconcileMinutes(): number {
+    return Math.max(
+      1,
+      numberSetting(this.configService, 'RECONCILE_INTERVAL_MINUTES', 10),
+    );
+  }
+
+  async runReconcile(): Promise<void> {
+    if (!this.github.isConfigured() || this.reconcileInFlight) {
+      return;
+    }
+    this.reconcileInFlight = this.reconcile()
+      .then((summary) => {
+        this.logger.log(`Reconcile done: ${JSON.stringify(summary)}`);
+      })
+      .catch((error: Error) => {
+        this.logger.error(
+          `Reconcile failed: ${error.message}`,
+          error.stack,
+          GapFillJob.name,
+        );
+      })
+      .finally(() => {
+        this.reconcileInFlight = null;
+      });
+    await this.reconcileInFlight;
+  }
+
+  async reconcile(now: Date = new Date()): Promise<ReconcileSummary> {
+    const cutoff = this.cutoffFor(now);
+    const summary: ReconcileSummary = {
+      reposProcessed: 0,
+      prsReconciled: 0,
+      eventsInserted: 0,
+    };
+    for (const repo of await this.ingest.repos()) {
+      const perRepo = await this.reconcileRepo(repo, cutoff);
+      summary.reposProcessed += 1;
+      summary.prsReconciled += perRepo.prsReconciled;
+      summary.eventsInserted += perRepo.eventsInserted;
+    }
+    await this.processCommands();
+    return summary;
   }
 
   private intervalSeconds(): number {
@@ -136,41 +194,17 @@ export class GapFillJob implements OnModuleInit {
     const summary: GapFillSummary = {
       reposProcessed: 0,
       prsScanned: 0,
-      prsReconciled: 0,
       eventsInserted: 0,
     };
-    const reconcileDue = this.reconcileDue(now);
     for (const repo of repos) {
       const perRepo = await this.pullRepo(repo, cutoff);
-      const reconcile = reconcileDue
-        ? await this.reconcileRepo(repo, cutoff)
-        : { prsReconciled: 0, eventsInserted: 0 };
       summary.reposProcessed += 1;
       summary.prsScanned += perRepo.prsScanned;
-      summary.prsReconciled += reconcile.prsReconciled;
-      summary.eventsInserted +=
-        perRepo.eventsInserted + reconcile.eventsInserted;
-    }
-    if (reconcileDue) {
-      this.lastReconciledAt = now;
+      summary.eventsInserted += perRepo.eventsInserted;
     }
     await this.processCommands();
     await this.syncStatus.markSynced(now);
     return summary;
-  }
-
-  // Re-checking every older open PR is the slow part of a sync, so it runs on its own,
-  // longer cadence while the recent-PR scan runs on every tick.
-  private reconcileDue(now: Date): boolean {
-    const minutes = numberSetting(
-      this.configService,
-      'RECONCILE_INTERVAL_MINUTES',
-      10,
-    );
-    return (
-      !this.lastReconciledAt ||
-      now.getTime() - this.lastReconciledAt.getTime() >= minutes * 60 * 1000
-    );
   }
 
   private cutoffFor(now: Date): Date {

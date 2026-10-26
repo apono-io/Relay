@@ -32,6 +32,8 @@ type Deps = {
   commandsFail?: boolean;
   config?: Record<string, unknown>;
   holdFetch?: Promise<void>;
+  holdReconcile?: Promise<void>;
+  reconcileFails?: boolean;
 };
 
 function build(deps: Deps = {}) {
@@ -74,6 +76,12 @@ function build(deps: Deps = {}) {
     fetchPullRequestTimelinesByNumbers: (repo: string, numbers: number[]) => {
       fetchByNumberCalls.push({ repo, numbers });
       callLog.push('reconcile');
+      if (deps.reconcileFails) {
+        return Promise.reject(new Error('GitHub is down'));
+      }
+      if (deps.holdReconcile) {
+        return deps.holdReconcile.then(() => []);
+      }
       const nodes = (staleNodesByRepo[repo] ?? []).filter((n) =>
         numbers.includes(n.number),
       );
@@ -173,7 +181,6 @@ describe('GapFillJob.pull', () => {
     expect(summary).toEqual({
       reposProcessed: 1,
       prsScanned: 1,
-      prsReconciled: 0,
       eventsInserted: 1,
     });
   });
@@ -240,7 +247,6 @@ describe('GapFillJob.pull', () => {
     expect(summary).toEqual({
       reposProcessed: 2,
       prsScanned: 2,
-      prsReconciled: 0,
       eventsInserted: 4,
     });
   });
@@ -257,7 +263,7 @@ describe('GapFillJob.pull', () => {
       },
       insertedPerPr: 1,
     });
-    const summary = await job.pull(NOW);
+    const summary = await job.reconcile(NOW);
     expect(fetchByNumberCalls).toEqual([
       { repo: 'apono-io/apono-mono', numbers: [11136, 11156] },
     ]);
@@ -280,7 +286,7 @@ describe('GapFillJob.pull', () => {
         ),
       },
     });
-    await job.pull(NOW);
+    await job.reconcile(NOW);
     expect(fetchByNumberCalls).toHaveLength(2);
     expect(fetchByNumberCalls[0].numbers).toHaveLength(20);
     expect(fetchByNumberCalls[1].numbers).toHaveLength(5);
@@ -294,7 +300,7 @@ describe('GapFillJob.pull', () => {
         'apono-io/apono-mono': [node(11136, '2026-06-15T00:00:00Z')],
       },
     });
-    const summary = await job.pull(NOW);
+    const summary = await job.reconcile(NOW);
     expect(persistCalls.map((c) => c.header.number)).toEqual([11136]);
     expect(summary.prsReconciled).toBe(1);
   });
@@ -405,9 +411,6 @@ describe('GapFillJob speed', () => {
     });
     await job.pull(NOW);
     expect(callLog.slice(0, 3)).toEqual(['fetch', 'commands', 'fetch']);
-    expect(callLog.indexOf('commands')).toBeLessThan(
-      callLog.indexOf('reconcile'),
-    );
   });
 
   it('does not look for commands after a page that stored nothing new', async () => {
@@ -421,15 +424,48 @@ describe('GapFillJob speed', () => {
     expect(commands.processPending).toHaveBeenCalledTimes(1);
   });
 
-  it('re-checks older open PRs at most every 10 minutes', async () => {
+  it('the recent-PR scan never waits on the re-check of older open PRs', async () => {
     const { job, fetchByNumberCalls } = build({
       staleNumbers: { 'apono-io/apono-mono': [9] },
     });
     await job.pull(NOW);
-    await job.pull(new Date(NOW.getTime() + 60_000));
+    expect(fetchByNumberCalls).toHaveLength(0);
+  });
+
+  it('runs the re-check on its own 10-minute timer', () => {
+    jest.useFakeTimers();
+    const spy = jest.spyOn(global, 'setInterval');
+    try {
+      const { job } = build({ configured: false });
+      job.onModuleInit();
+      expect(spy).toHaveBeenCalledWith(expect.any(Function), 10 * 60_000);
+    } finally {
+      spy.mockRestore();
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('skips a re-check while the previous one is still going', async () => {
+    let release!: () => void;
+    const holdReconcile = new Promise<void>((resolve) => (release = resolve));
+    const { job, fetchByNumberCalls } = build({
+      staleNumbers: { 'apono-io/apono-mono': [9] },
+      holdReconcile,
+    });
+    const first = job.runReconcile();
+    const second = job.runReconcile();
+    release();
+    await Promise.all([first, second]);
     expect(fetchByNumberCalls).toHaveLength(1);
-    await job.pull(new Date(NOW.getTime() + 10 * 60_000));
-    expect(fetchByNumberCalls).toHaveLength(2);
+  });
+
+  it('a re-check failure is logged, not thrown', async () => {
+    const { job } = build({
+      staleNumbers: { 'apono-io/apono-mono': [9] },
+      reconcileFails: true,
+    });
+    await expect(job.runReconcile()).resolves.toBeUndefined();
   });
 
   it('skips a scheduled run while the previous one is still going', async () => {
