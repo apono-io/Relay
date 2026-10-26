@@ -9,11 +9,15 @@ export function SyncStatus() {
   const { data } = useQuery<{ lastSyncedAt: string | null }>(LAST_SYNCED_QUERY, {
     pollInterval: 30000,
   });
-  const [syncNow, { loading: syncing }] = useMutation(SYNC_NOW_MUTATION, {
+  const [syncNow, { loading: syncing, error: syncError }] = useMutation(SYNC_NOW_MUTATION, {
     onCompleted: () => void client.refetchQueries({ include: 'active' }),
+    // The failure is shown in place of the sync time below.
+    onError: () => undefined,
   });
 
   const lastSyncedAt = data?.lastSyncedAt ?? null;
+  const failed = !syncing && Boolean(syncError);
+  const dotColor = failed ? 'warning' : 'success';
 
   return (
     <Stack direction="row" alignItems="center" spacing={1}>
@@ -22,18 +26,22 @@ export function SyncStatus() {
           width: 7,
           height: 7,
           borderRadius: '50%',
-          bgcolor: lastSyncedAt ? 'success.main' : 'text.disabled',
+          bgcolor: failed || lastSyncedAt ? `${dotColor}.main` : 'text.disabled',
           boxShadow: (theme) =>
-            lastSyncedAt ? `0 0 0 3px ${theme.palette.success.main}26` : 'none',
+            failed || lastSyncedAt ? `0 0 0 3px ${theme.palette[dotColor].main}26` : 'none',
         }}
       />
-      <Typography variant="caption" color="text.secondary" noWrap>
-        {syncing
-          ? 'Syncing with GitHub…'
-          : lastSyncedAt
-            ? `Synced ${formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true })}`
-            : 'Not synced yet'}
-      </Typography>
+      <Tooltip title={failed ? (syncError?.message ?? '') : ''}>
+        <Typography variant="caption" color="text.secondary" noWrap>
+          {syncing
+            ? 'Syncing with GitHub…'
+            : failed
+              ? "Couldn't sync with GitHub"
+              : lastSyncedAt
+                ? `Synced ${formatDistanceToNow(new Date(lastSyncedAt), { addSuffix: true })}`
+                : 'Not synced yet'}
+        </Typography>
+      </Tooltip>
       <Tooltip title="Pull the latest activity from GitHub">
         <span>
           <IconButton size="small" onClick={() => syncNow()} disabled={syncing}>
