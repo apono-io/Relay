@@ -38,10 +38,10 @@ fragment PrTimelineNode on PullRequest {
     nodes { id state submittedAt author { login } }
   }
   comments(first: 100) {
-    nodes { id createdAt author { login } body }
+    nodes { id createdAt author { login __typename } body }
   }
   recentComments: comments(last: 20) {
-    nodes { id createdAt author { login } body }
+    nodes { id createdAt author { login __typename } body }
   }
   timelineItems(
     first: 100

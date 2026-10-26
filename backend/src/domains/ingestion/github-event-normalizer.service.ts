@@ -81,6 +81,17 @@ const commandPayload = (
   return command ? { command } : undefined;
 };
 
+// GraphQL returns a Bot's login without the "[bot]" suffix webhooks carry; add it back so
+// bot comments (Relay's own replies included) are recognised the same on both paths.
+const commentAuthor = (
+  author: { login?: string; __typename?: string } | null | undefined,
+): string | undefined =>
+  author?.__typename === 'Bot' &&
+  author.login &&
+  !author.login.endsWith('[bot]')
+    ? `${author.login}[bot]`
+    : author?.login;
+
 const iso = (value: unknown): Date => new Date(value as string);
 const isBotLogin = (login: string | undefined): boolean =>
   !!login && login.endsWith('[bot]');
@@ -230,7 +241,7 @@ export class GithubEventNormalizer {
       events.push({
         ...base,
         type: PrEventType.COMMENT,
-        actorLogin: comment.author?.login,
+        actorLogin: commentAuthor(comment.author),
         payload: commandPayload(comment.body),
         occurredAt: iso(comment.createdAt),
         externalId: this.buildExternalId({

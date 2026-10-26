@@ -146,6 +146,36 @@ describe('GithubEventNormalizer', () => {
     });
   });
 
+  describe('bot comment authors', () => {
+    it('keeps the [bot] suffix GitHub GraphQL drops for a Bot author', () => {
+      const { events } = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({
+          comments: {
+            nodes: [
+              {
+                id: 'C1',
+                createdAt: READY_AT,
+                author: { login: 'apono-relay', __typename: 'Bot' },
+                body: 'Requested a review from @EthanHemo, a good fit for this change.',
+              },
+              {
+                id: 'C2',
+                createdAt: READY_AT,
+                author: { login: 'alice', __typename: 'User' },
+                body: 'thanks',
+              },
+            ],
+          },
+        }),
+      );
+      const authors = events
+        .filter((e) => e.type === PrEventType.COMMENT)
+        .map((e) => e.actorLogin);
+      expect(authors).toEqual(['apono-relay[bot]', 'alice']);
+    });
+  });
+
   describe('pending reviews', () => {
     it('leaves out a review that is still pending (no submittedAt yet)', () => {
       const { events } = normalizer.normalizeBackfillNode(
