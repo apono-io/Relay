@@ -73,7 +73,7 @@ export class GitHubClient {
   private readonly authMode: AuthMode;
   private readonly pat: string;
   private readonly appId: string;
-  private readonly installationId: string;
+  private installationId: string;
   private readonly privateKey: string;
   private accessToken: string | null = null;
   private tokenExpiry = 0;
@@ -97,7 +97,7 @@ export class GitHubClient {
     if (this.authMode === 'pat') {
       return !!this.pat;
     }
-    return !!(this.appId && this.installationId && this.privateKey);
+    return !!(this.appId && this.privateKey);
   }
 
   async fetchPullRequestTimelines(
@@ -332,21 +332,50 @@ ${PR_NODE_FRAGMENT}`;
       this.privateKey,
       { algorithm: 'RS256' },
     );
+    const headers = {
+      Authorization: `Bearer ${appJwt}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+    if (!this.installationId) {
+      this.installationId = await this.findInstallationId(headers);
+    }
 
     const response = await axios.post(
       `https://api.github.com/app/installations/${this.installationId}/access_tokens`,
       {},
-      {
-        headers: {
-          Authorization: `Bearer ${appJwt}`,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      },
+      { headers },
     );
 
     this.accessToken = response.data.token;
     this.tokenExpiry = now + 3600;
     return this.accessToken!;
+  }
+
+  // An org member who requested the install cannot see its id, so the App finds it:
+  // the installation on the account that owns the watched repositories.
+  private async findInstallationId(
+    headers: Record<string, string>,
+  ): Promise<string> {
+    const response = await axios.get<
+      { id: number; account?: { login?: string } }[]
+    >('https://api.github.com/app/installations', { headers });
+    const owner = (this.configService.get<string>('GITHUB_REPOS') || '')
+      .split(',')[0]
+      ?.split('/')[0]
+      ?.trim();
+    const match = response.data.find(
+      (installation) =>
+        installation.account?.login?.toLowerCase() === owner?.toLowerCase(),
+    );
+    if (!match) {
+      throw new Error(
+        `The GitHub App is not installed on ${owner || 'the watched repositories owner'} — install it there, or set GITHUB_APP_INSTALLATION_ID.`,
+      );
+    }
+    this.loggerService.log(
+      `GitHub App installation found: ${match.id} on ${owner}`,
+    );
+    return String(match.id);
   }
 }
