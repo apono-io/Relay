@@ -18,7 +18,8 @@ export class AppSettingsService {
     const row = await this.settingsRepo.findOne({
       where: { key: ACTUALLY_ASSIGN_KEY },
     });
-    return row?.value === true;
+    // A switch saved on earlier still reads off while Relay cannot write as its App.
+    return row?.value === true && this.github.canWrite();
   }
 
   async setActuallyAssign(enabled: boolean): Promise<boolean> {

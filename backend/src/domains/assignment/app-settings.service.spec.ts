@@ -38,4 +38,22 @@ describe('AppSettingsService.setActuallyAssign', () => {
     await expect(service.setActuallyAssign(false)).resolves.toBe(false);
     expect(settingsRepo.save).toHaveBeenCalled();
   });
+
+  it('reads as off while Relay cannot write as its App, even if it was saved on', async () => {
+    const { service, settingsRepo } = setup(false);
+    settingsRepo.findOne.mockResolvedValue({
+      key: 'assignment.actuallyAssign',
+      value: true,
+    });
+    await expect(service.actuallyAssign()).resolves.toBe(false);
+  });
+
+  it('reads as on when saved on and Relay writes as its App', async () => {
+    const { service, settingsRepo } = setup(true);
+    settingsRepo.findOne.mockResolvedValue({
+      key: 'assignment.actuallyAssign',
+      value: true,
+    });
+    await expect(service.actuallyAssign()).resolves.toBe(true);
+  });
 });

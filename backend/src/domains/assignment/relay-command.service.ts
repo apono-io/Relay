@@ -44,7 +44,10 @@ const UNKNOWN_ACCOUNT_REASON =
   "Relay doesn't know this GitHub account yet. Link it in Relay under Settings, or ask an admin to add it under System settings → People.";
 
 type CommandResult = { outcome: CommandOutcome; reason?: string };
-type PickedReviewer = Pick<RelayAssignment, 'login' | 'area' | 'reason'>;
+type PickedReviewer = Pick<
+  RelayAssignment,
+  'login' | 'area' | 'reason' | 'shadow'
+>;
 type HandledCommand = CommandResult & { pick?: PickedReviewer };
 
 @Injectable()
@@ -92,14 +95,17 @@ export class RelayCommandService {
     }
 
     const stats = await this.candidateStats.build(now);
-    const live = await this.appSettings.actuallyAssign();
     for (const event of pending) {
       if (!(await this.claim(event.id, now))) {
         continue;
       }
       const { pick, ...result } = await this.handle(event, stats);
       await this.mergePayload(event.id, result);
-      if (live && event.occurredAt >= since) {
+      // The switch is read again for every reply, so turning it off stops replies at once.
+      if (
+        event.occurredAt >= since &&
+        (await this.appSettings.actuallyAssign())
+      ) {
         await this.reply(event, result, pick);
       }
       summary[SUMMARY_KEY[result.outcome]] += 1;
@@ -235,7 +241,8 @@ function replyText(
 ): string | null {
   switch (result.outcome) {
     case 'assigned':
-      return pick ? assignedReply(pick) : null;
+      // Only a review GitHub actually received gets announced.
+      return pick && pick.shadow === false ? assignedReply(pick) : null;
     case 'skipped':
       return 'Got it. Relay will stay off this pull request.';
     case 'refused':

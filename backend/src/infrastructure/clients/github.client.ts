@@ -291,6 +291,9 @@ ${PR_NODE_FRAGMENT}`;
     query: string,
     variables: Record<string, unknown> = {},
   ): Promise<T> {
+    if (/^\s*mutation\b/.test(query)) {
+      this.assertCanWrite();
+    }
     const token = await this.getToken();
     const response = await axios.post(
       'https://api.github.com/graphql',
@@ -316,6 +319,9 @@ ${PR_NODE_FRAGMENT}`;
     path: string,
     body?: unknown,
   ): Promise<T> {
+    if (method !== 'get') {
+      this.assertCanWrite();
+    }
     const token = await this.getToken();
     const response = await axios.request<T>({
       method,

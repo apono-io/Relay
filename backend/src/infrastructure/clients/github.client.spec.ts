@@ -160,4 +160,20 @@ describe('GitHubClient writes', () => {
     expect(patClient().canWrite()).toBe(false);
     expect(appClient().canWrite()).toBe(true);
   });
+
+  it('refuses any non-GET REST call with a personal token', async () => {
+    await expect(
+      patClient().rest('post', '/repos/org/app/issues/7/labels', {}),
+    ).rejects.toThrow('Relay writes to GitHub only as its GitHub App');
+    expect(mockedAxios.request).not.toHaveBeenCalled();
+  });
+
+  it('refuses a GraphQL mutation with a personal token', async () => {
+    await expect(
+      patClient().graphql(
+        'mutation { addComment(input: {}) { clientMutationId } }',
+      ),
+    ).rejects.toThrow('Relay writes to GitHub only as its GitHub App');
+    expect(mockedAxios.post).not.toHaveBeenCalled();
+  });
 });

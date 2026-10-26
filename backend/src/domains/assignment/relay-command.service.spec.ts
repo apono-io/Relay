@@ -82,7 +82,7 @@ function setup(events: unknown[] = [], candidates: unknown[] = []) {
     }),
   };
   const actions = {
-    assign: jest.fn().mockResolvedValue({ login: 'expert' }),
+    assign: jest.fn().mockResolvedValue({ login: 'expert', shadow: false }),
   };
   const configService = { get: jest.fn() };
   const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
@@ -302,7 +302,7 @@ describe('RelayCommandService reply explains the pick', () => {
   function liveSetup(assignment: Record<string, unknown>) {
     const ctx = setup([commandEvent('assign')]);
     ctx.appSettings.actuallyAssign.mockResolvedValue(true);
-    ctx.actions.assign.mockResolvedValue(assignment);
+    ctx.actions.assign.mockResolvedValue({ shadow: false, ...assignment });
     return ctx;
   }
 
@@ -418,5 +418,29 @@ describe('RelayCommandService and who may command', () => {
     appSettings.actuallyAssign.mockResolvedValue(true);
     await service.processPending(NOW);
     expect(github.createIssueComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('RelayCommandService never writes while assignment stays a test', () => {
+  it('does not claim a review request that stayed a test', async () => {
+    const { service, appSettings, github, actions } = setup([
+      commandEvent('assign'),
+    ]);
+    appSettings.actuallyAssign.mockResolvedValue(true);
+    actions.assign.mockResolvedValue({ login: 'expert', shadow: true });
+    await service.processPending(NOW);
+    expect(github.createIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('re-checks the switch before each reply', async () => {
+    const { service, appSettings, github } = setup([
+      commandEvent('skip'),
+      commandEvent('skip', 'author', { id: 'event-2' }),
+    ]);
+    appSettings.actuallyAssign
+      .mockResolvedValueOnce(true)
+      .mockResolvedValue(false);
+    await service.processPending(NOW);
+    expect(github.createIssueComment).toHaveBeenCalledTimes(1);
   });
 });
