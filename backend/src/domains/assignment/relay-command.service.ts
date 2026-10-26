@@ -18,7 +18,6 @@ import {
   CandidateStatsService,
 } from './candidate-stats.service';
 import { AssignmentActionsService } from './assignment-actions.service';
-import { AppSettingsService } from './app-settings.service';
 import { RelayAssignment } from './models/relay-assignment.model';
 
 export type CommandOutcome =
@@ -57,7 +56,6 @@ export class RelayCommandService {
     private readonly eventRepo: Repository<PrEvent>,
     private readonly candidateStats: CandidateStatsService,
     private readonly actions: AssignmentActionsService,
-    private readonly appSettings: AppSettingsService,
     private readonly github: GitHubClient,
     private readonly configService: ConfigService,
     private readonly logger: LoggerService,
@@ -101,11 +99,9 @@ export class RelayCommandService {
       }
       const { pick, ...result } = await this.handle(event, stats);
       await this.mergePayload(event.id, result);
-      // The switch is read again for every reply, so turning it off stops replies at once.
-      if (
-        event.occurredAt >= since &&
-        (await this.appSettings.actuallyAssign())
-      ) {
+      // Replies go out only as the App, also in test mode, where nobody is requested or
+      // mentioned; Relay re-checks before every reply.
+      if (event.occurredAt >= since && this.github.canWrite()) {
         await this.reply(event, result, pick);
       }
       summary[SUMMARY_KEY[result.outcome]] += 1;
@@ -218,20 +214,26 @@ function capitalize(phrase: string): string {
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
 
+// In test mode (shadow) the reviewer is named in bold, not @-mentioned, so they get
+// no notification, and the reply says no review was requested.
 function assignedReply(pick: PickedReviewer): string {
+  const live = pick.shadow === false;
   const reasons = (pick.reason ?? '')
     .split(' and ')
     .map((phrase) => phrase.trim())
     .filter(Boolean)
     .map((phrase) => `- ${capitalize(PUBLIC_PHRASE[phrase] ?? phrase)}`);
   return [
-    `Requested a review from @${pick.login}, a good fit for this change.`,
+    live
+      ? `Requested a review from @${pick.login}, a good fit for this change.`
+      : `Relay would request a review from **${pick.login}**, a good fit for this change.`,
     '',
     `**Why ${pick.login}**`,
     ...(pick.area ? [`This change touches ${pick.area}.`] : []),
     ...reasons,
     '',
     'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
+    ...(live ? [] : ['', '_Test mode: no review was requested._']),
   ].join('\n');
 }
 
@@ -241,8 +243,7 @@ function replyText(
 ): string | null {
   switch (result.outcome) {
     case 'assigned':
-      // Only a review GitHub actually received gets announced.
-      return pick && pick.shadow === false ? assignedReply(pick) : null;
+      return pick ? assignedReply(pick) : null;
     case 'skipped':
       return 'Got it. Relay will stay off this pull request.';
     case 'refused':

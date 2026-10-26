@@ -86,18 +86,19 @@ function setup(events: unknown[] = [], candidates: unknown[] = []) {
   };
   const configService = { get: jest.fn() };
   const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
-  const appSettings = { actuallyAssign: jest.fn().mockResolvedValue(false) };
-  const github = { createIssueComment: jest.fn().mockResolvedValue(undefined) };
+  const github = {
+    createIssueComment: jest.fn().mockResolvedValue(undefined),
+    canWrite: jest.fn().mockReturnValue(true),
+  };
   const service = new RelayCommandService(
     eventRepo as never,
     candidateStats as never,
     actions as never,
-    appSettings as never,
     github as never,
     configService as never,
     logger as never,
   );
-  return { service, qb, actions, logger, candidateStats, appSettings, github };
+  return { service, qb, actions, logger, candidateStats, github };
 }
 
 function outcomePatches(qb: Record<string, jest.Mock>) {
@@ -217,8 +218,7 @@ describe('RelayCommandService.processPending', () => {
 
 describe('RelayCommandService replies on GitHub', () => {
   it('replies on GitHub when live assignment is on', async () => {
-    const { service, appSettings, github } = setup([commandEvent('assign')]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
+    const { service, github } = setup([commandEvent('assign')]);
     await service.processPending(NOW);
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
@@ -230,8 +230,7 @@ describe('RelayCommandService replies on GitHub', () => {
   });
 
   it('confirms a skip', async () => {
-    const { service, appSettings, github } = setup([commandEvent('skip')]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
+    const { service, github } = setup([commandEvent('skip')]);
     await service.processPending(NOW);
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
@@ -241,10 +240,7 @@ describe('RelayCommandService replies on GitHub', () => {
   });
 
   it('explains a refusal', async () => {
-    const { service, appSettings, github, actions } = setup([
-      commandEvent('assign'),
-    ]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
+    const { service, github, actions } = setup([commandEvent('assign')]);
     actions.assign.mockRejectedValue(
       new BadRequestException('Drafts do not get a reviewer.'),
     );
@@ -257,28 +253,23 @@ describe('RelayCommandService replies on GitHub', () => {
   });
 
   it('stays quiet for a command from someone other than the author', async () => {
-    const { service, appSettings, github } = setup([
-      commandEvent('assign', 'reviewer'),
-    ]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
+    const { service, github } = setup([commandEvent('assign', 'reviewer')]);
     await service.processPending(NOW);
     expect(github.createIssueComment).not.toHaveBeenCalled();
   });
 
-  it('never replies while live assignment is off', async () => {
+  it('never replies without the App', async () => {
     const { service, github } = setup([
       commandEvent('assign'),
       commandEvent('skip', 'author', { id: 'event-2' }),
     ]);
+    github.canWrite.mockReturnValue(false);
     await service.processPending(NOW);
     expect(github.createIssueComment).not.toHaveBeenCalled();
   });
 
   it('a failed reply keeps the outcome', async () => {
-    const { service, qb, appSettings, github, logger } = setup([
-      commandEvent('assign'),
-    ]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
+    const { service, qb, github, logger } = setup([commandEvent('assign')]);
     github.createIssueComment.mockRejectedValue(new Error('403'));
     const summary = await service.processPending(NOW);
     expect(summary.assigned).toBe(1);
@@ -287,10 +278,9 @@ describe('RelayCommandService replies on GitHub', () => {
   });
 
   it('records a stale skip without replying', async () => {
-    const { service, qb, appSettings, github } = setup([
+    const { service, qb, github } = setup([
       commandEvent('skip', 'author', { occurredAt: subHours(NOW, 30) }),
     ]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
     const summary = await service.processPending(NOW);
     expect(summary.skipped).toBe(1);
     expect(outcomePatches(qb)).toEqual([{ outcome: 'skipped' }]);
@@ -301,7 +291,6 @@ describe('RelayCommandService replies on GitHub', () => {
 describe('RelayCommandService reply explains the pick', () => {
   function liveSetup(assignment: Record<string, unknown>) {
     const ctx = setup([commandEvent('assign')]);
-    ctx.appSettings.actuallyAssign.mockResolvedValue(true);
     ctx.actions.assign.mockResolvedValue({ shadow: false, ...assignment });
     return ctx;
   }
@@ -411,35 +400,51 @@ describe('RelayCommandService and who may command', () => {
   });
 
   it('stays quiet towards someone turned off in Relay', async () => {
-    const { service, appSettings, github } = setup(
+    const { service, github } = setup(
       [commandEvent('assign')],
       [{ personId: 'p-author', active: false }],
     );
-    appSettings.actuallyAssign.mockResolvedValue(true);
     await service.processPending(NOW);
     expect(github.createIssueComment).not.toHaveBeenCalled();
   });
 });
 
-describe('RelayCommandService never writes while assignment stays a test', () => {
-  it('does not claim a review request that stayed a test', async () => {
-    const { service, appSettings, github, actions } = setup([
-      commandEvent('assign'),
-    ]);
-    appSettings.actuallyAssign.mockResolvedValue(true);
-    actions.assign.mockResolvedValue({ login: 'expert', shadow: true });
+describe('RelayCommandService in test mode', () => {
+  it('announces a pick that stayed a test without mentioning or requesting anyone', async () => {
+    const { service, github, actions } = setup([commandEvent('assign')]);
+    actions.assign.mockResolvedValue({
+      login: 'EthanHemo',
+      shadow: true,
+      area: null,
+      reason:
+        'worked on this part of the code recently and has no open reviews',
+    });
     await service.processPending(NOW);
-    expect(github.createIssueComment).not.toHaveBeenCalled();
+    expect(github.createIssueComment).toHaveBeenCalledWith(
+      'org/app',
+      7,
+      [
+        'Relay would request a review from **EthanHemo**, a good fit for this change.',
+        '',
+        '**Why EthanHemo**',
+        '- Worked on this part of the code recently',
+        '- Has no open reviews',
+        '',
+        'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
+        '',
+        '_Test mode: no review was requested._',
+      ].join('\n'),
+    );
+    const body = github.createIssueComment.mock.calls[0][2] as string;
+    expect(body).not.toContain('@');
   });
 
-  it('re-checks the switch before each reply', async () => {
-    const { service, appSettings, github } = setup([
+  it('re-checks that Relay can write before each reply', async () => {
+    const { service, github } = setup([
       commandEvent('skip'),
       commandEvent('skip', 'author', { id: 'event-2' }),
     ]);
-    appSettings.actuallyAssign
-      .mockResolvedValueOnce(true)
-      .mockResolvedValue(false);
+    github.canWrite.mockReturnValueOnce(true).mockReturnValue(false);
     await service.processPending(NOW);
     expect(github.createIssueComment).toHaveBeenCalledTimes(1);
   });
