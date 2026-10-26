@@ -44,13 +44,13 @@ function commandEvent(
   };
 }
 
-function setup(events: unknown[] = []) {
+function setup(events: unknown[] = [], candidates: unknown[] = []) {
   const qb = chainableQb();
   qb.getMany.mockResolvedValue(events);
   const eventRepo = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
   const candidateStats = {
     build: jest.fn().mockResolvedValue({
-      candidates: [],
+      candidates,
       rulesByRepo: {},
       modeByPersonId: new Map(),
       personByLogin: new Map([
@@ -121,6 +121,7 @@ describe('RelayCommandService.processPending', () => {
       skipped: 0,
       refused: 0,
       notAuthor: 0,
+      ignored: 0,
     });
     expect(outcomePatches(qb)).toEqual([{ outcome: 'assigned' }]);
   });
@@ -203,6 +204,7 @@ describe('RelayCommandService.processPending', () => {
       skipped: 0,
       refused: 0,
       notAuthor: 0,
+      ignored: 0,
     });
   });
 
@@ -372,5 +374,49 @@ describe('RelayCommandService reply explains the pick', () => {
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
     expect(body).not.toMatch(/\d/);
+  });
+});
+
+describe('RelayCommandService and who may command', () => {
+  it('tells an author Relay does not know yet how to fix it', async () => {
+    const { service, qb, actions } = setup([
+      commandEvent('assign', 'NewHire', {
+        pullRequest: {
+          id: 'pr-1',
+          repo: 'org/app',
+          number: 7,
+          authorLogin: 'newhire',
+        },
+      }),
+    ]);
+    const summary = await service.processPending(NOW);
+    expect(actions.assign).not.toHaveBeenCalled();
+    expect(summary.refused).toBe(1);
+    expect(outcomePatches(qb)[0]).toEqual({
+      outcome: 'refused',
+      reason:
+        "Relay doesn't know this GitHub account yet. Link it in Relay under Settings, or ask an admin to add it under System settings → People.",
+    });
+  });
+
+  it('ignores a command from someone turned off in Relay', async () => {
+    const { service, qb, actions } = setup(
+      [commandEvent('assign')],
+      [{ personId: 'p-author', active: false }],
+    );
+    const summary = await service.processPending(NOW);
+    expect(actions.assign).not.toHaveBeenCalled();
+    expect(summary.ignored).toBe(1);
+    expect(outcomePatches(qb)).toEqual([{ outcome: 'ignored' }]);
+  });
+
+  it('stays quiet towards someone turned off in Relay', async () => {
+    const { service, appSettings, github } = setup(
+      [commandEvent('assign')],
+      [{ personId: 'p-author', active: false }],
+    );
+    appSettings.actuallyAssign.mockResolvedValue(true);
+    await service.processPending(NOW);
+    expect(github.createIssueComment).not.toHaveBeenCalled();
   });
 });

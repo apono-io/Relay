@@ -21,14 +21,27 @@ import { AssignmentActionsService } from './assignment-actions.service';
 import { AppSettingsService } from './app-settings.service';
 import { RelayAssignment } from './models/relay-assignment.model';
 
-export type CommandOutcome = 'assigned' | 'skipped' | 'refused' | 'not-author';
+export type CommandOutcome =
+  'assigned' | 'skipped' | 'refused' | 'not-author' | 'ignored';
 
 export type CommandSummary = {
   assigned: number;
   skipped: number;
   refused: number;
   notAuthor: number;
+  ignored: number;
 };
+
+const SUMMARY_KEY: Record<CommandOutcome, keyof CommandSummary> = {
+  assigned: 'assigned',
+  skipped: 'skipped',
+  refused: 'refused',
+  'not-author': 'notAuthor',
+  ignored: 'ignored',
+};
+
+const UNKNOWN_ACCOUNT_REASON =
+  "Relay doesn't know this GitHub account yet. Link it in Relay under Settings, or ask an admin to add it under System settings → People.";
 
 type CommandResult = { outcome: CommandOutcome; reason?: string };
 type PickedReviewer = Pick<RelayAssignment, 'login' | 'area' | 'reason'>;
@@ -53,6 +66,7 @@ export class RelayCommandService {
       skipped: 0,
       refused: 0,
       notAuthor: 0,
+      ignored: 0,
     };
     const maxAgeHours = numberSetting(
       this.configService,
@@ -88,11 +102,7 @@ export class RelayCommandService {
       if (live && event.occurredAt >= since) {
         await this.reply(event, result, pick);
       }
-      if (result.outcome === 'not-author') {
-        summary.notAuthor += 1;
-      } else {
-        summary[result.outcome] += 1;
-      }
+      summary[SUMMARY_KEY[result.outcome]] += 1;
     }
     return summary;
   }
@@ -106,8 +116,20 @@ export class RelayCommandService {
       (event.actorLogin ?? '').toLowerCase(),
     );
     const author = stats.personByLogin.get(pr.authorLogin.toLowerCase());
+    const isAuthorLogin =
+      (event.actorLogin ?? '').toLowerCase() === pr.authorLogin.toLowerCase();
+    if (!commenter && isAuthorLogin) {
+      return { outcome: 'refused', reason: UNKNOWN_ACCOUNT_REASON };
+    }
     if (!commenter || !author || commenter.personId !== author.personId) {
       return { outcome: 'not-author' };
+    }
+    // A person turned off in Relay is out of tracking and every nudge, so Relay stays quiet.
+    const person = stats.candidates.find(
+      (candidate) => candidate.personId === commenter.personId,
+    );
+    if (person && !person.active) {
+      return { outcome: 'ignored' };
     }
 
     const command = event.payload?.command as RelayCommand;
@@ -219,6 +241,7 @@ function replyText(
     case 'refused':
       return `Relay didn't pick a reviewer: ${result.reason}`;
     case 'not-author':
+    case 'ignored':
       return null;
   }
 }

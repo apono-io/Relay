@@ -124,6 +124,7 @@ function build(deps: Deps = {}) {
             skipped: 0,
             refused: 0,
             notAuthor: 0,
+            ignored: 0,
           });
     }),
   };
