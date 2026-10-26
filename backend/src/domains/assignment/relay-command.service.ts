@@ -19,6 +19,7 @@ import {
 } from './candidate-stats.service';
 import { AssignmentActionsService } from './assignment-actions.service';
 import { AppSettingsService } from './app-settings.service';
+import { RelayAssignment } from './models/relay-assignment.model';
 
 export type CommandOutcome = 'assigned' | 'skipped' | 'refused' | 'not-author';
 
@@ -30,7 +31,8 @@ export type CommandSummary = {
 };
 
 type CommandResult = { outcome: CommandOutcome; reason?: string };
-type HandledCommand = CommandResult & { login?: string };
+type PickedReviewer = Pick<RelayAssignment, 'login' | 'area' | 'reason'>;
+type HandledCommand = CommandResult & { pick?: PickedReviewer };
 
 @Injectable()
 export class RelayCommandService {
@@ -81,10 +83,10 @@ export class RelayCommandService {
       if (!(await this.claim(event.id, now))) {
         continue;
       }
-      const { login, ...result } = await this.handle(event, stats);
+      const { pick, ...result } = await this.handle(event, stats);
       await this.mergePayload(event.id, result);
       if (live && event.occurredAt >= since) {
-        await this.reply(event, result, login);
+        await this.reply(event, result, pick);
       }
       if (result.outcome === 'not-author') {
         summary.notAuthor += 1;
@@ -119,7 +121,7 @@ export class RelayCommandService {
         author.personId,
         'comment',
       );
-      return { outcome: 'assigned', login: assignment.login };
+      return { outcome: 'assigned', pick: assignment };
     } catch (error) {
       const reason =
         error instanceof BadRequestException ||
@@ -137,9 +139,9 @@ export class RelayCommandService {
   private async reply(
     event: PrEvent,
     result: CommandResult,
-    login: string | undefined,
+    pick: PickedReviewer | undefined,
   ): Promise<void> {
-    const body = replyText(result, login);
+    const body = replyText(result, pick);
     if (!body) {
       return;
     }
@@ -179,13 +181,39 @@ export class RelayCommandService {
   }
 }
 
+// Public wording for the engine's reason phrases; a PR comment is seen by the whole team.
+const PUBLIC_PHRASE: Record<string, string> = {
+  'has not reviewed lately': 'has had a lighter review load lately',
+};
+
+function capitalize(phrase: string): string {
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+function assignedReply(pick: PickedReviewer): string {
+  const reasons = (pick.reason ?? '')
+    .split(' and ')
+    .map((phrase) => phrase.trim())
+    .filter(Boolean)
+    .map((phrase) => `- ${capitalize(PUBLIC_PHRASE[phrase] ?? phrase)}`);
+  return [
+    `Requested a review from @${pick.login}, a good fit for this change.`,
+    '',
+    `**Why ${pick.login}**`,
+    ...(pick.area ? [`This change touches ${pick.area}.`] : []),
+    ...reasons,
+    '',
+    'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
+  ].join('\n');
+}
+
 function replyText(
   result: CommandResult,
-  login: string | undefined,
+  pick: PickedReviewer | undefined,
 ): string | null {
   switch (result.outcome) {
     case 'assigned':
-      return `Requested a review from @${login}, a good fit for this change.`;
+      return pick ? assignedReply(pick) : null;
     case 'skipped':
       return 'Got it. Relay will stay off this pull request.';
     case 'refused':

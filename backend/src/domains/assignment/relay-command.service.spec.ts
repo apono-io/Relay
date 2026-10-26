@@ -221,7 +221,9 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      'Requested a review from @expert, a good fit for this change.',
+      expect.stringMatching(
+        /^Requested a review from @expert, a good fit for this change\./,
+      ),
     );
   });
 
@@ -291,5 +293,84 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(summary.skipped).toBe(1);
     expect(outcomePatches(qb)).toEqual([{ outcome: 'skipped' }]);
     expect(github.createIssueComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('RelayCommandService reply explains the pick', () => {
+  function liveSetup(assignment: Record<string, unknown>) {
+    const ctx = setup([commandEvent('assign')]);
+    ctx.appSettings.actuallyAssign.mockResolvedValue(true);
+    ctx.actions.assign.mockResolvedValue(assignment);
+    return ctx;
+  }
+
+  it('names the reviewer, the area and the reasons', async () => {
+    const { service, github } = liveSetup({
+      login: 'EthanHemo',
+      area: 'Frontend',
+      reason: 'worked on Frontend recently and has no open reviews',
+      signals: {
+        areaRank: 2,
+        areaPool: 15,
+        openReviewRequests: 0,
+        reviewsLast14Days: 20,
+      },
+    });
+    await service.processPending(NOW);
+    expect(github.createIssueComment).toHaveBeenCalledWith(
+      'org/app',
+      7,
+      [
+        'Requested a review from @EthanHemo, a good fit for this change.',
+        '',
+        '**Why EthanHemo**',
+        'This change touches Frontend.',
+        '- Worked on Frontend recently',
+        '- Has no open reviews',
+        '',
+        'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
+      ].join('\n'),
+    );
+  });
+
+  it('leaves out the area line when the change has no area', async () => {
+    const { service, github } = liveSetup({
+      login: 'EthanHemo',
+      area: null,
+      reason: 'worked on this part of the code recently',
+    });
+    await service.processPending(NOW);
+    const body = github.createIssueComment.mock.calls[0][2] as string;
+    expect(body).not.toContain('This change touches');
+    expect(body).toContain('- Worked on this part of the code recently');
+  });
+
+  it('softens "has not reviewed lately" for a public comment', async () => {
+    const { service, github } = liveSetup({
+      login: 'EthanHemo',
+      area: null,
+      reason: 'has no open reviews and has not reviewed lately',
+    });
+    await service.processPending(NOW);
+    const body = github.createIssueComment.mock.calls[0][2] as string;
+    expect(body).toContain('- Has had a lighter review load lately');
+    expect(body).not.toContain('has not reviewed');
+  });
+
+  it('never shows numbers from the engine', async () => {
+    const { service, github } = liveSetup({
+      login: 'EthanHemo',
+      area: 'Frontend',
+      reason: 'worked on Frontend recently and has no open reviews',
+      signals: {
+        areaRank: 2,
+        areaPool: 15,
+        openReviewRequests: 0,
+        reviewsLast14Days: 20,
+      },
+    });
+    await service.processPending(NOW);
+    const body = github.createIssueComment.mock.calls[0][2] as string;
+    expect(body).not.toMatch(/\d/);
   });
 });
