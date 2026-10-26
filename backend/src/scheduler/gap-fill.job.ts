@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { subHours } from 'date-fns';
+import { subHours, subMinutes } from 'date-fns';
 import { LoggerService } from '@/infrastructure/logging/logger.service';
 import { GitHubClient } from '@/infrastructure/clients/github.client';
 import { SyncStatusService } from '@/infrastructure/sync/sync-status.service';
@@ -26,6 +26,7 @@ export type ReconcileSummary = {
 
 const RECONCILE_BATCH_SIZE = 20;
 const SYNC_OVERLAP_HOURS = 1;
+const SCAN_OVERLAP_MINUTES = 5;
 const MIN_INTERVAL_SECONDS = 5;
 
 @Injectable()
@@ -188,7 +189,7 @@ export class GapFillJob implements OnModuleInit {
   }
 
   async pull(now: Date = new Date()): Promise<GapFillSummary> {
-    const cutoff = this.cutoffFor(now);
+    const cutoff = this.scanCutoff(now);
     const repos = await this.ingest.repos();
 
     const summary: GapFillSummary = {
@@ -196,15 +197,34 @@ export class GapFillJob implements OnModuleInit {
       prsScanned: 0,
       eventsInserted: 0,
     };
+    // One failing repo does not hold up the others; the sync is only marked done when
+    // every repo went through, so the next run still reaches back for the failed one.
+    const failures: string[] = [];
     for (const repo of repos) {
-      const perRepo = await this.pullRepo(repo, cutoff);
-      summary.reposProcessed += 1;
-      summary.prsScanned += perRepo.prsScanned;
-      summary.eventsInserted += perRepo.eventsInserted;
+      try {
+        const perRepo = await this.pullRepo(repo, cutoff);
+        summary.reposProcessed += 1;
+        summary.prsScanned += perRepo.prsScanned;
+        summary.eventsInserted += perRepo.eventsInserted;
+      } catch (error) {
+        failures.push(`${repo}: ${(error as Error).message}`);
+      }
     }
     await this.processCommands();
+    if (failures.length > 0) {
+      throw new Error(failures.join('; '));
+    }
     await this.syncStatus.markSynced(now);
     return summary;
+  }
+
+  // The frequent scan resumes just before the last sync instead of re-reading the
+  // whole lookback window; the slow re-check keeps the full window.
+  private scanCutoff(now: Date): Date {
+    const lastSynced = this.syncStatus.lastSyncedAt;
+    return lastSynced
+      ? subMinutes(lastSynced, SCAN_OVERLAP_MINUTES)
+      : this.cutoffFor(now);
   }
 
   private cutoffFor(now: Date): Date {

@@ -34,6 +34,7 @@ type Deps = {
   holdFetch?: Promise<void>;
   holdReconcile?: Promise<void>;
   reconcileFails?: boolean;
+  failRepos?: string[];
 };
 
 function build(deps: Deps = {}) {
@@ -62,6 +63,9 @@ function build(deps: Deps = {}) {
     fetchPullRequestTimelines: (repo: string, opts: any) => {
       fetchCalls.push({ repo, opts });
       callLog.push('fetch');
+      if (deps.failRepos?.includes(repo)) {
+        return Promise.reject(new Error('GitHub is down'));
+      }
       if (deps.fetchFails) {
         return Promise.reject(new Error('GitHub is down'));
       }
@@ -335,14 +339,15 @@ describe('GapFillJob.pull', () => {
     expect(syncStatus.lastSyncedAt).toEqual(NOW);
   });
 
-  it('keeps the regular window when the last sync is fresh', async () => {
+  it('resumes from just before the last sync when it is fresh', async () => {
     const { job, syncStatus, persistCalls } = build({
       lookbackHours: 24,
       pages: {
         'apono-io/apono-mono': [
           page([
-            node(1, '2026-07-07T11:00:00Z'), // in window
-            node(2, '2026-07-05T00:00:00Z'), // outside window — skipped
+            node(1, '2026-07-07T11:58:00Z'), // after the last sync
+            node(2, '2026-07-07T11:52:00Z'), // inside the 5-minute overlap
+            node(3, '2026-07-07T11:00:00Z'), // already seen by earlier syncs
           ]),
         ],
       },
@@ -350,7 +355,37 @@ describe('GapFillJob.pull', () => {
     });
     await syncStatus.markSynced(new Date('2026-07-07T11:55:00Z'));
     await job.pull(NOW);
-    expect(persistCalls.map((c) => c.header.number)).toEqual([1]);
+    expect(persistCalls.map((c) => c.header.number)).toEqual([1, 2]);
+  });
+
+  it('the re-check still covers the full lookback window when the last sync is fresh', async () => {
+    let cutoffSeen: Date | null = null;
+    const { job, syncStatus } = build({ lookbackHours: 24 });
+    (job as any).pullRequests.findOpenNumbersUpdatedBefore = (
+      _repo: string,
+      cutoff: Date,
+    ) => {
+      cutoffSeen = cutoff;
+      return Promise.resolve([]);
+    };
+    await syncStatus.markSynced(new Date('2026-07-07T11:55:00Z'));
+    await job.reconcile(NOW);
+    expect(cutoffSeen).toEqual(new Date('2026-07-06T12:00:00Z'));
+  });
+
+  it('a failing repo does not stop the others, and the sync is not marked done', async () => {
+    const { job, persistCalls, syncStatus, commands } = build({
+      repos: ['org/broken', 'org/ok'],
+      pages: {
+        'org/ok': [page([node(2, '2026-07-07T11:59:00Z')])],
+      },
+      failRepos: ['org/broken'],
+      insertedPerPr: 1,
+    });
+    await expect(job.pull(NOW)).rejects.toThrow('org/broken');
+    expect(persistCalls.map((c) => c.header.repo)).toEqual(['org/ok']);
+    expect(commands.processPending).toHaveBeenCalled();
+    expect(syncStatus.lastSyncedAt).toBeNull();
   });
 });
 
@@ -379,10 +414,11 @@ describe('GapFillJob.run and @relay commands', () => {
     expect(commands.processPending).toHaveBeenCalledTimes(1);
   });
 
-  it('skips commands when the pull fails', async () => {
-    const { job, commands } = build({ fetchFails: true });
+  it('still handles stored commands when GitHub fails, without marking the sync done', async () => {
+    const { job, commands, syncStatus } = build({ fetchFails: true });
     await job.run();
-    expect(commands.processPending).not.toHaveBeenCalled();
+    expect(commands.processPending).toHaveBeenCalledTimes(1);
+    expect(syncStatus.lastSyncedAt).toBeNull();
   });
 
   it('a command failure does not fail the sync', async () => {
