@@ -41,8 +41,9 @@ Known limits:
   the next sign-in, not the current session.
 - `@relay` commands usually take effect within 10–15 seconds locally
   (`GAP_FILL_INTERVAL_SECONDS=20`). An `assign` older than `COMMAND_MAX_AGE_HOURS`
-  (default 24) is ignored; a skip of any age is kept. Relay posts no reply on GitHub while
-  `assignment.actuallyAssign` is off.
+  (default 24) is ignored; a skip of any age is kept. While `assignment.actuallyAssign`
+  is off, Relay still replies as its App but names the pick in bold instead of
+  @-mentioning them and requests no review, so nobody is notified.
 - Webhooks exist only as the deployed path; locally the gap-fill is the live mechanism
   (`GAP_FILL_INTERVAL_MINUTES`, set to 1 locally, default 10 in code). It resumes from a
   watermark in `app_settings`, so downtime of any length self-heals on the first run after
