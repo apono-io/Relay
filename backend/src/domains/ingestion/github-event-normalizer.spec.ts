@@ -146,6 +146,41 @@ describe('GithubEventNormalizer', () => {
     });
   });
 
+  describe('pending reviews', () => {
+    it('leaves out a review that is still pending (no submittedAt yet)', () => {
+      const { events } = normalizer.normalizeBackfillNode(
+        REPO,
+        backfillNode({
+          reviews: {
+            nodes: [
+              {
+                id: 'R1',
+                state: 'PENDING',
+                submittedAt: null,
+                author: { login: 'Dorsg' },
+              },
+              {
+                id: 'R2',
+                state: 'APPROVED',
+                submittedAt: READY_AT,
+                author: { login: 'Dorsg' },
+              },
+            ],
+          },
+        }),
+      );
+      const reviews = events.filter(
+        (e) =>
+          e.type === PrEventType.REVIEW_SUBMITTED ||
+          e.type === PrEventType.REVIEW_DISMISSED,
+      );
+      expect(reviews.map((e) => e.externalId)).toEqual(['review:R2']);
+      expect(events.every((e) => !Number.isNaN(e.occurredAt.getTime()))).toBe(
+        true,
+      );
+    });
+  });
+
   describe('@relay commands in comments', () => {
     it.each([
       ['@relay assign', 'assign'],

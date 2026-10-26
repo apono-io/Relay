@@ -199,6 +199,11 @@ export class GithubEventNormalizer {
     }
 
     for (const review of prNode.reviews?.nodes ?? []) {
+      // A pending review (started, not submitted) has no submittedAt and is visible only
+      // to its author's token; it is not activity yet, and its date would be invalid.
+      if (!review.submittedAt) {
+        continue;
+      }
       const state = String(review.state ?? '').toLowerCase();
       const type =
         state === 'dismissed'
@@ -209,7 +214,7 @@ export class GithubEventNormalizer {
         type,
         actorLogin: review.author?.login,
         payload: { state },
-        occurredAt: iso(review.submittedAt ?? review.createdAt),
+        occurredAt: iso(review.submittedAt),
         externalId: this.buildExternalId({ kind: 'review', nodeId: review.id }),
       });
     }
