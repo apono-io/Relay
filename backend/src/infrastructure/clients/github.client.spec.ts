@@ -41,7 +41,7 @@ describe('GitHubClient as a GitHub App', () => {
     });
     await appClient().rest('get', '/rate_limit');
     expect(mockedAxios.get).toHaveBeenCalledWith(
-      'https://api.github.com/app/installations',
+      'https://api.github.com/app/installations?per_page=100',
       expect.anything(),
     );
     expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -91,6 +91,65 @@ describe('GitHubClient as a GitHub App', () => {
     expect(mockedAxios.get).not.toHaveBeenCalled();
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'https://api.github.com/app/installations/42/access_tokens',
+      {},
+      expect.anything(),
+    );
+  });
+
+  it('uses the only installation when no owner is configured', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: [{ id: 777, account: { login: 'apono-io' } }],
+    });
+    await appClient({ GITHUB_REPOS: '' }).rest('get', '/rate_limit');
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://api.github.com/app/installations/777/access_tokens',
+      {},
+      expect.anything(),
+    );
+  });
+
+  it('prefers GITHUB_APP_INSTALLATION_OWNER over GITHUB_REPOS', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: [
+        { id: 1, account: { login: 'apono-io' } },
+        { id: 2, account: { login: 'other-org' } },
+      ],
+    });
+    await appClient({ GITHUB_APP_INSTALLATION_OWNER: 'other-org' }).rest(
+      'get',
+      '/rate_limit',
+    );
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'https://api.github.com/app/installations/2/access_tokens',
+      {},
+      expect.anything(),
+    );
+  });
+
+  it('waits before looking the installation up again after a failure', async () => {
+    mockedAxios.get.mockResolvedValue({ data: [] });
+    const client = appClient();
+    await expect(client.rest('get', '/rate_limit')).rejects.toThrow();
+    await expect(client.rest('get', '/rate_limit')).rejects.toThrow();
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('finds the installation again after GitHub says it is gone', async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({
+        data: [{ id: 777, account: { login: 'apono-io' } }],
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: 888, account: { login: 'apono-io' } }],
+      });
+    mockedAxios.post
+      .mockRejectedValueOnce({ response: { status: 404 } })
+      .mockResolvedValue({ data: { token: 'installation-token' } });
+    const client = appClient();
+    await expect(client.rest('get', '/rate_limit')).rejects.toBeDefined();
+    await client.rest('get', '/rate_limit');
+    expect(mockedAxios.post).toHaveBeenLastCalledWith(
+      'https://api.github.com/app/installations/888/access_tokens',
       {},
       expect.anything(),
     );

@@ -6,6 +6,8 @@ import { LoggerService } from '../logging/logger.service';
 
 type AuthMode = 'pat' | 'app';
 
+const INSTALLATION_LOOKUP_RETRY_MS = 60_000;
+
 const PR_NODE_FRAGMENT = `
 fragment PrTimelineNode on PullRequest {
   id
@@ -74,7 +76,10 @@ export class GitHubClient {
   private readonly pat: string;
   private readonly appId: string;
   private installationId: string;
+  private readonly configuredInstallationId: string;
   private readonly privateKey: string;
+  private lookupError: Error | null = null;
+  private lookupFailedAt = 0;
   private accessToken: string | null = null;
   private tokenExpiry = 0;
 
@@ -86,8 +91,9 @@ export class GitHubClient {
       (this.configService.get<string>('GITHUB_AUTH_MODE') as AuthMode) || 'pat';
     this.pat = this.configService.get<string>('GITHUB_PAT') || '';
     this.appId = this.configService.get<string>('GITHUB_APP_ID') || '';
-    this.installationId =
+    this.configuredInstallationId =
       this.configService.get<string>('GITHUB_APP_INSTALLATION_ID') || '';
+    this.installationId = this.configuredInstallationId;
     this.privateKey = (
       this.configService.get<string>('GITHUB_APP_PRIVATE_KEY') || ''
     ).replace(/\\n/g, '\n');
@@ -360,43 +366,83 @@ ${PR_NODE_FRAGMENT}`;
       'X-GitHub-Api-Version': '2022-11-28',
     };
     if (!this.installationId) {
-      this.installationId = await this.findInstallationId(headers);
+      this.installationId = await this.lookUpInstallationId(headers);
     }
 
-    const response = await axios.post(
-      `https://api.github.com/app/installations/${this.installationId}/access_tokens`,
-      {},
-      { headers },
-    );
+    let response: { data: { token: string } };
+    try {
+      response = await axios.post(
+        `https://api.github.com/app/installations/${this.installationId}/access_tokens`,
+        {},
+        { headers },
+      );
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response
+        ?.status;
+      if (status === 404 && !this.configuredInstallationId) {
+        // The App was reinstalled or removed; find its installation again next time.
+        this.installationId = '';
+      }
+      throw error;
+    }
 
     this.accessToken = response.data.token;
     this.tokenExpiry = now + 3600;
     return this.accessToken!;
   }
 
+  // A failed lookup is remembered for a minute, so a missing install is not
+  // re-queried on every call.
+  private async lookUpInstallationId(
+    headers: Record<string, string>,
+  ): Promise<string> {
+    if (
+      this.lookupError &&
+      Date.now() - this.lookupFailedAt < INSTALLATION_LOOKUP_RETRY_MS
+    ) {
+      throw this.lookupError;
+    }
+    try {
+      const id = await this.findInstallationId(headers);
+      this.lookupError = null;
+      return id;
+    } catch (error) {
+      this.lookupError = error as Error;
+      this.lookupFailedAt = Date.now();
+      throw error;
+    }
+  }
+
   // An org member who requested the install cannot see its id, so the App finds it:
-  // the installation on the account that owns the watched repositories.
+  // the installation on the configured owner, or the App's only installation.
   private async findInstallationId(
     headers: Record<string, string>,
   ): Promise<string> {
     const response = await axios.get<
       { id: number; account?: { login?: string } }[]
-    >('https://api.github.com/app/installations', { headers });
-    const owner = (this.configService.get<string>('GITHUB_REPOS') || '')
-      .split(',')[0]
-      ?.split('/')[0]
-      ?.trim();
-    const match = response.data.find(
-      (installation) =>
-        installation.account?.login?.toLowerCase() === owner?.toLowerCase(),
-    );
+    >('https://api.github.com/app/installations?per_page=100', { headers });
+    const owner = (
+      this.configService.get<string>('GITHUB_APP_INSTALLATION_OWNER') ||
+      (this.configService.get<string>('GITHUB_REPOS') || '')
+        .split(',')[0]
+        ?.split('/')[0] ||
+      ''
+    ).trim();
+    const match = owner
+      ? response.data.find(
+          (installation) =>
+            installation.account?.login?.toLowerCase() === owner.toLowerCase(),
+        )
+      : response.data.length === 1
+        ? response.data[0]
+        : undefined;
     if (!match) {
       throw new Error(
         `The GitHub App is not installed on ${owner || 'the watched repositories owner'} — install it there, or set GITHUB_APP_INSTALLATION_ID.`,
       );
     }
     this.loggerService.log(
-      `GitHub App installation found: ${match.id} on ${owner}`,
+      `GitHub App installation found: ${match.id} on ${match.account?.login ?? owner}`,
     );
     return String(match.id);
   }
