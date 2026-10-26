@@ -33,14 +33,16 @@ cite.
 | Assignment hardening: repeat-pick damping (no back-to-back picks while someone comparable is free), race-safe atomic claim with GitHub rollback, self-review/duplicate-review stats fixes, honest reason phrases, NaN-safe config reads, full unit coverage of the actions service | done — 161 backend tests |
 | Focus batch: My PRs is a my-turn checklist, repo chip + sensitivity dots on every PR table, approved PRs leave My Reviews, review rounds named in the timeline, menu split into personal / Team, email-only Add person, Assignment-engine performance view | done — 191 backend tests |
 | `@relay assign` / `@relay skip` PR comment commands: read in the one-minute sync, author-only, skip blocks auto-assign, replies on the PR only while live assignment is on | done — 240 backend tests |
+| Live-ready writes: the Apono Relay GitHub App (installation found automatically), GitHub writes only as the App, a PR reply that explains the pick, a faster sync (20-second scan, separate 10-minute re-check, no overlapping runs), pending reviews no longer break the sync, Relay's own comments out of review metrics | done — 280 backend tests |
 
 Known limits:
 
 - A token already issued keeps its role for up to one day; deactivating a person blocks
   the next sign-in, not the current session.
-- `@relay` commands take effect within one sync interval (one minute locally), are
-  ignored once older than `COMMAND_MAX_AGE_HOURS` (default 24), and post no reply on
-  GitHub while `assignment.actuallyAssign` is off.
+- `@relay` commands usually take effect within 10–15 seconds locally
+  (`GAP_FILL_INTERVAL_SECONDS=20`). An `assign` older than `COMMAND_MAX_AGE_HOURS`
+  (default 24) is ignored; a skip of any age is kept. Relay posts no reply on GitHub while
+  `assignment.actuallyAssign` is off.
 - Webhooks exist only as the deployed path; locally the gap-fill is the live mechanism
   (`GAP_FILL_INTERVAL_MINUTES`, set to 1 locally, default 10 in code). It resumes from a
   watermark in `app_settings`, so downtime of any length self-heals on the first run after
@@ -48,8 +50,9 @@ Known limits:
 - Tilt reports the Postgres container as healthy after it has died, and the backend
   `/health` endpoint does not touch the database, so neither signal catches a dead
   database. Check `docker ps` when data looks frozen.
-- The GitHub PAT is read-only, so Relay cannot write anything to GitHub yet. Turning on
-  live assignment needs both a write-scoped token and the `actuallyAssign` switch.
+- Relay writes to GitHub only as the Apono Relay GitHub App (`apono-relay[bot]`); with a
+  personal token it only reads, and the `actuallyAssign` switch refuses to turn on. The
+  App is still owned by a personal account and should be transferred to `apono-io`.
 - Every area rule currently carries risk level 2, so the sensitivity indicator on PR rows
   is uniform until those levels are set apart.
 - 16 of the 17 people have no display name, so any surface that names a person falls back

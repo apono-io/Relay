@@ -54,7 +54,7 @@ Tiltfile    runs backend + frontend locally
 |---|---|
 | `core/auth` | Google OAuth + JWT login (apono.io only), person-backed roles, GitHub account linking. |
 | `core/rbac` | Permission constants and the `PermissionsGuard` (`resource:action`). |
-| `infrastructure` | Logger, sync-status, and the GitHub client (read-only PAT locally, GitHub App when deployed). |
+| `infrastructure` | Logger, sync-status, and the GitHub client (a read-only PAT, or the Apono Relay GitHub App — the only identity Relay writes to GitHub with). |
 | `domains/people` | Roster: people, `github_identities` (one person, many logins), commit-email seeding, roster health. |
 | `domains/pull-requests` | `PullRequest` + `PrEvent` entities and the `PhaseComputer` (phases + per-round Reviewer/Author waits + waiting_on). |
 | `domains/ingestion` | `GithubEventNormalizer` (canonical event ids), `BackfillService`, and the webhook controller (deployed path). |
@@ -65,8 +65,10 @@ Tiltfile    runs backend + frontend locally
 
 ## Local development
 
-Relay runs entirely on your laptop. It authenticates to GitHub with a read-only
-fine-grained personal access token (no GitHub App needed until deployment).
+Relay runs entirely on your laptop. It reads GitHub with a read-only fine-grained
+personal access token. To let it request reviewers and reply on PRs, run it as the Apono
+Relay GitHub App (`GITHUB_AUTH_MODE=app`, see `.env.example`): Relay never writes to
+GitHub with a personal token.
 
 1. Copy `.env.example` to `backend/.env` and fill in `GITHUB_PAT`, `GITHUB_REPOS`, and the
    Google OAuth values. `GITHUB_REPOS` only seeds the `repos` table on an empty database;
