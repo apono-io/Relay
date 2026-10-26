@@ -97,7 +97,7 @@ export class PhaseComputer {
     const reworkCycles = this.countChangesRequested(ordered, readyAt);
     const requestedReviewers = this.finalRequestedReviewers(ordered);
     const checkState = this.latestCheckState(ordered);
-    const reviewCommentCount = this.countComments(ordered);
+    const reviewCommentCount = this.countComments(ordered, botReviewers);
 
     const pickupTime =
       readyAt && firstReviewAt
@@ -429,8 +429,14 @@ export class PhaseComputer {
       : undefined;
   }
 
-  private countComments(events: PrEvent[]): number {
-    return events.filter((e) => e.type === PrEventType.COMMENT).length;
+  // Relay's own replies and @relay commands are not review discussion.
+  private countComments(events: PrEvent[], botReviewers: Set<string>): number {
+    return events.filter(
+      (e) =>
+        e.type === PrEventType.COMMENT &&
+        !isBotReviewer(e.actorLogin, botReviewers) &&
+        !e.payload?.command,
+    ).length;
   }
 
   private computeWaitingOnState(

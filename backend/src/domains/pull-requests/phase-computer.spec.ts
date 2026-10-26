@@ -287,4 +287,45 @@ describe('PhaseComputer', () => {
     const result = computer.compute(events, SLA);
     expect(result.waitingOn).toBe(WaitingOn.AUTHOR);
   });
+
+  describe('review comment count', () => {
+    const approvedAfter = (comments: PrEvent[]) =>
+      computer.compute(
+        [
+          ev(PrEventType.PR_OPENED, h(0), { isDraft: false }),
+          ...comments,
+          ev(
+            PrEventType.REVIEW_SUBMITTED,
+            h(3),
+            { state: 'approved' },
+            'reviewer',
+          ),
+        ],
+        SLA,
+      );
+
+    it('counts a human review comment', () => {
+      const result = approvedAfter([
+        ev(PrEventType.COMMENT, h(1), {}, 'reviewer'),
+      ]);
+      expect(result.reviewCommentCount).toBe(1);
+      expect(result.approvedWithZeroComments).toBe(false);
+    });
+
+    it("leaves out Relay's own replies", () => {
+      const result = approvedAfter([
+        ev(PrEventType.COMMENT, h(1), {}, 'apono-relay[bot]'),
+      ]);
+      expect(result.reviewCommentCount).toBe(0);
+      expect(result.approvedWithZeroComments).toBe(true);
+    });
+
+    it('leaves out @relay command comments', () => {
+      const result = approvedAfter([
+        ev(PrEventType.COMMENT, h(1), { command: 'assign' }, 'author'),
+      ]);
+      expect(result.reviewCommentCount).toBe(0);
+      expect(result.approvedWithZeroComments).toBe(true);
+    });
+  });
 });
