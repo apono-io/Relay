@@ -223,9 +223,7 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      expect.stringMatching(
-        /^#### Review requested\n@expert looks like a good fit for this change\./,
-      ),
+      expect.stringMatching(/^Requested a review from @expert\./),
     );
   });
 
@@ -295,7 +293,7 @@ describe('RelayCommandService reply explains the pick', () => {
     return ctx;
   }
 
-  it('names the reviewer, the area and the reasons', async () => {
+  it("mirrors the app's Why popover: three checks, counted or not", async () => {
     const { service, github } = liveSetup({
       login: 'EthanHemo',
       area: 'Frontend',
@@ -304,7 +302,7 @@ describe('RelayCommandService reply explains the pick', () => {
         areaRank: 2,
         areaPool: 15,
         openReviewRequests: 0,
-        reviewsLast14Days: 20,
+        reviewsLast14Days: 19,
       },
     });
     await service.processPending(NOW);
@@ -312,62 +310,74 @@ describe('RelayCommandService reply explains the pick', () => {
       'org/app',
       7,
       [
-        '#### Review requested',
-        '@EthanHemo looks like a good fit for this change.',
+        'Requested a review from @EthanHemo.',
         '',
-        'This change touches **Frontend**.',
+        '#### Why EthanHemo?',
+        'This pull request touches **Frontend**.',
         '',
-        '- **Familiarity:** worked on Frontend recently',
-        '- **Availability:** has no open reviews',
+        '✅ **Familiarity:** worked on Frontend recently',
+        '✅ **Availability:** no open review requests right now',
+        '⚪ **Fairness:** 19 reviews in the last 14 days',
         '',
-        '<sub>Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.</sub>',
+        '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>',
       ].join('\n'),
     );
   });
 
-  it('leaves out the area line when the change has no area', async () => {
+  it('marks a check not counted when the signal is not in their favour', async () => {
     const { service, github } = liveSetup({
       login: 'EthanHemo',
       area: null,
-      reason: 'worked on this part of the code recently',
-    });
-    await service.processPending(NOW);
-    const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).not.toContain('This change touches');
-    expect(body).toContain(
-      '- **Familiarity:** worked on this part of the code recently',
-    );
-  });
-
-  it('softens "has not reviewed lately" for a public comment', async () => {
-    const { service, github } = liveSetup({
-      login: 'EthanHemo',
-      area: null,
-      reason: 'has no open reviews and has not reviewed lately',
-    });
-    await service.processPending(NOW);
-    const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).toContain(
-      '- **Review load:** has had a lighter review load lately',
-    );
-    expect(body).not.toContain('has not reviewed');
-  });
-
-  it('never shows numbers from the engine', async () => {
-    const { service, github } = liveSetup({
-      login: 'EthanHemo',
-      area: 'Frontend',
-      reason: 'worked on Frontend recently and has no open reviews',
+      reason: 'has not reviewed lately',
       signals: {
-        areaRank: 2,
+        areaRank: null,
         areaPool: 15,
-        openReviewRequests: 0,
-        reviewsLast14Days: 20,
+        openReviewRequests: 1,
+        reviewsLast14Days: 0,
       },
     });
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).not.toMatch(/\d/);
+    expect(body).not.toContain('This pull request touches');
+    expect(body).toContain(
+      '⚪ **Familiarity:** no recent work on this part of the code',
+    );
+    expect(body).toContain(
+      '⚪ **Availability:** 1 open review request right now',
+    );
+    expect(body).toContain('✅ **Fairness:** no reviews in the last 14 days');
+  });
+
+  it('falls back to the reason phrases when a pick has no signals', async () => {
+    const { service, github } = liveSetup({
+      login: 'EthanHemo',
+      area: null,
+      reason: 'has no open reviews and has not reviewed lately',
+      signals: null,
+    });
+    await service.processPending(NOW);
+    const body = github.createIssueComment.mock.calls[0][2] as string;
+    expect(body).toContain('✅ Has no open reviews');
+    expect(body).toContain('✅ Has had a lighter review load lately');
+    expect(body).not.toContain('has not reviewed');
+  });
+
+  it("never shows the engine's rank or pool size", async () => {
+    const { service, github } = liveSetup({
+      login: 'EthanHemo',
+      area: 'Frontend',
+      reason: 'worked on Frontend recently',
+      signals: {
+        areaRank: 7,
+        areaPool: 15,
+        openReviewRequests: 0,
+        reviewsLast14Days: 3,
+      },
+    });
+    await service.processPending(NOW);
+    const body = github.createIssueComment.mock.calls[0][2] as string;
+    expect(body).not.toMatch(/\b(7|15)\b/);
+    expect(body).toContain('3 reviews in the last 14 days');
   });
 });
 
@@ -423,19 +433,26 @@ describe('RelayCommandService in test mode', () => {
       area: null,
       reason:
         'worked on this part of the code recently and has no open reviews',
+      signals: {
+        areaRank: 2,
+        areaPool: 15,
+        openReviewRequests: 0,
+        reviewsLast14Days: 19,
+      },
     });
     await service.processPending(NOW);
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
       [
-        '#### Suggested reviewer',
-        '**EthanHemo** looks like a good fit for this change.',
+        'Relay would request a review from **EthanHemo**.',
         '',
-        '- **Familiarity:** worked on this part of the code recently',
-        '- **Availability:** has no open reviews',
+        '#### Why EthanHemo?',
+        '✅ **Familiarity:** worked on this part of the code recently',
+        '✅ **Availability:** no open review requests right now',
+        '⚪ **Fairness:** 19 reviews in the last 14 days',
         '',
-        '<sub>Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.</sub>',
+        '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>',
         '',
         '> [!NOTE]',
         '> Test mode: no review was requested, and EthanHemo was not notified.',

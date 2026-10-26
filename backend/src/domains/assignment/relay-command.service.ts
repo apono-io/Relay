@@ -45,7 +45,7 @@ const UNKNOWN_ACCOUNT_REASON =
 type CommandResult = { outcome: CommandOutcome; reason?: string };
 type PickedReviewer = Pick<
   RelayAssignment,
-  'login' | 'area' | 'reason' | 'shadow'
+  'login' | 'area' | 'reason' | 'shadow' | 'signals'
 >;
 type HandledCommand = CommandResult & { pick?: PickedReviewer };
 
@@ -210,42 +210,79 @@ const PUBLIC_PHRASE: Record<string, string> = {
   'has not reviewed lately': 'has had a lighter review load lately',
 };
 
-// The same three checks the app's "Why?" popover names.
-function reasonLabel(phrase: string): string | null {
-  if (phrase.startsWith('worked') || phrase.startsWith('knows')) {
-    return 'Familiarity';
+function capitalize(phrase: string): string {
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+type WhyLine = { category: string | null; text: string; counted: boolean };
+
+// The same three checks, wording and counted/not-counted marks as the app's "Why?"
+// popover (frontend RelayAssignmentPair whyLines), so the PR and the app agree.
+function whyLines(pick: PickedReviewer): WhyLine[] {
+  const phrases = (pick.reason ?? '')
+    .split(' and ')
+    .map((phrase) => phrase.trim())
+    .filter(Boolean);
+  const signals = pick.signals;
+  if (!signals) {
+    return phrases.map((phrase) => ({
+      category: null,
+      text: capitalize(PUBLIC_PHRASE[phrase] ?? phrase),
+      counted: true,
+    }));
   }
-  if (phrase === 'has no open reviews' || phrase === 'is available to review') {
-    return 'Availability';
-  }
-  if (phrase === 'has had a lighter review load lately') {
-    return 'Review load';
-  }
-  return null;
+  const areaLabel = pick.area ?? 'this part of the code';
+  const knowledge = phrases.find(
+    (phrase) => phrase.startsWith('knows') || phrase.startsWith('worked'),
+  );
+  const open = signals.openReviewRequests;
+  const recent = signals.reviewsLast14Days;
+  return [
+    {
+      category: 'Familiarity',
+      text: knowledge ?? `no recent work on ${areaLabel}`,
+      counted: Boolean(knowledge),
+    },
+    {
+      category: 'Availability',
+      text:
+        open === 0
+          ? 'no open review requests right now'
+          : `${open} open review request${open === 1 ? '' : 's'} right now`,
+      counted: open === 0,
+    },
+    {
+      category: 'Fairness',
+      text:
+        recent === 0
+          ? 'no reviews in the last 14 days'
+          : `${recent} review${recent === 1 ? '' : 's'} in the last 14 days`,
+      counted: recent === 0,
+    },
+  ];
 }
 
 const FAIRNESS_NOTE =
-  '<sub>Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.</sub>';
+  '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>';
 
 // In test mode (shadow) the reviewer is named in bold, not @-mentioned, so they get
 // no notification, and a note says no review was requested.
 function assignedReply(pick: PickedReviewer): string {
   const live = pick.shadow === false;
-  const reasons = (pick.reason ?? '')
-    .split(' and ')
-    .map((phrase) => phrase.trim())
-    .filter(Boolean)
-    .map((phrase) => PUBLIC_PHRASE[phrase] ?? phrase)
-    .map((phrase) => {
-      const label = reasonLabel(phrase);
-      return label ? `- **${label}:** ${phrase}` : `- ${phrase}`;
-    });
+  // GitHub comments break lines on every newline, so each check sits on its own line.
+  const lines = whyLines(pick).map((line) => {
+    const mark = line.counted ? '✅' : '⚪';
+    const label = line.category ? `**${line.category}:** ` : '';
+    return `${mark} ${label}${line.text}`;
+  });
   return [
-    live ? '#### Review requested' : '#### Suggested reviewer',
-    `${live ? `@${pick.login}` : `**${pick.login}**`} looks like a good fit for this change.`,
+    live
+      ? `Requested a review from @${pick.login}.`
+      : `Relay would request a review from **${pick.login}**.`,
     '',
-    ...(pick.area ? [`This change touches **${pick.area}**.`, ''] : []),
-    ...reasons,
+    `#### Why ${pick.login}?`,
+    ...(pick.area ? [`This pull request touches **${pick.area}**.`, ''] : []),
+    ...lines,
     '',
     FAIRNESS_NOTE,
     ...(live
