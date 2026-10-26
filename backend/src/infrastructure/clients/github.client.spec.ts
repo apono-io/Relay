@@ -105,3 +105,59 @@ describe('GitHubClient as a GitHub App', () => {
     );
   });
 });
+
+function patClient() {
+  const values: Record<string, string> = {
+    GITHUB_AUTH_MODE: 'pat',
+    GITHUB_PAT: 'personal-token',
+  };
+  const configService = { get: (key: string) => values[key] };
+  const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  return new GitHubClient(configService as never, logger as never);
+}
+
+describe('GitHubClient writes', () => {
+  it.each([
+    [
+      'requestReviewers',
+      (c: GitHubClient) => c.requestReviewers('org/app', 7, ['x']),
+    ],
+    [
+      'removeRequestedReviewers',
+      (c: GitHubClient) => c.removeRequestedReviewers('org/app', 7, ['x']),
+    ],
+    [
+      'createIssueComment',
+      (c: GitHubClient) => c.createIssueComment('org/app', 7, 'hi'),
+    ],
+  ])('%s never writes with a personal token', async (_name, write) => {
+    await expect(write(patClient())).rejects.toThrow(
+      'Relay writes to GitHub only as its GitHub App',
+    );
+    expect(mockedAxios.request).not.toHaveBeenCalled();
+  });
+
+  it('reads still work with a personal token', async () => {
+    await patClient().rest('get', '/rate_limit');
+    expect(mockedAxios.request).toHaveBeenCalled();
+  });
+
+  it('writes as the App', async () => {
+    await appClient({ GITHUB_APP_INSTALLATION_ID: '42' }).requestReviewers(
+      'org/app',
+      7,
+      ['x'],
+    );
+    expect(mockedAxios.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'post',
+        url: 'https://api.github.com/repos/org/app/pulls/7/requested_reviewers',
+      }),
+    );
+  });
+
+  it('tells callers whether writes are possible', () => {
+    expect(patClient().canWrite()).toBe(false);
+    expect(appClient().canWrite()).toBe(true);
+  });
+});

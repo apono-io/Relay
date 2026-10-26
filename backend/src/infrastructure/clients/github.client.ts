@@ -93,6 +93,19 @@ export class GitHubClient {
     ).replace(/\\n/g, '\n');
   }
 
+  // Every GitHub write goes out as Relay's own App identity, never as a person's token.
+  canWrite(): boolean {
+    return this.authMode === 'app' && this.isConfigured();
+  }
+
+  private assertCanWrite(): void {
+    if (!this.canWrite()) {
+      throw new Error(
+        'Relay writes to GitHub only as its GitHub App — set GITHUB_AUTH_MODE=app with the App credentials.',
+      );
+    }
+  }
+
   isConfigured(): boolean {
     if (this.authMode === 'pat') {
       return !!this.pat;
@@ -211,6 +224,7 @@ ${PR_NODE_FRAGMENT}`;
     prNumber: number,
     logins: string[],
   ): Promise<void> {
+    this.assertCanWrite();
     try {
       await this.rest(
         'post',
@@ -234,6 +248,7 @@ ${PR_NODE_FRAGMENT}`;
     number: number,
     body: string,
   ): Promise<void> {
+    this.assertCanWrite();
     try {
       await this.rest('post', `/repos/${repo}/issues/${number}/comments`, {
         body,
@@ -253,6 +268,7 @@ ${PR_NODE_FRAGMENT}`;
     prNumber: number,
     logins: string[],
   ): Promise<void> {
+    this.assertCanWrite();
     try {
       await this.rest(
         'delete',
