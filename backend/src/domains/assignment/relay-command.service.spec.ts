@@ -224,7 +224,7 @@ describe('RelayCommandService replies on GitHub', () => {
       'org/app',
       7,
       expect.stringMatching(
-        /^Requested a review from @expert, a good fit for this change\./,
+        /^#### Review requested\n@expert looks like a good fit for this change\./,
       ),
     );
   });
@@ -235,7 +235,7 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      'Got it. Relay will stay off this pull request.',
+      "#### Relay will stay off this pull request\nGot it. Relay won't pick a reviewer here.",
     );
   });
 
@@ -248,7 +248,7 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      "Relay didn't pick a reviewer: Drafts do not get a reviewer.",
+      '#### No reviewer picked\nDrafts do not get a reviewer.',
     );
   });
 
@@ -312,14 +312,15 @@ describe('RelayCommandService reply explains the pick', () => {
       'org/app',
       7,
       [
-        'Requested a review from @EthanHemo, a good fit for this change.',
+        '#### Review requested',
+        '@EthanHemo looks like a good fit for this change.',
         '',
-        '**Why EthanHemo**',
-        'This change touches Frontend.',
-        '- Worked on Frontend recently',
-        '- Has no open reviews',
+        'This change touches **Frontend**.',
         '',
-        'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
+        '- **Familiarity:** worked on Frontend recently',
+        '- **Availability:** has no open reviews',
+        '',
+        '<sub>Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.</sub>',
       ].join('\n'),
     );
   });
@@ -333,7 +334,9 @@ describe('RelayCommandService reply explains the pick', () => {
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
     expect(body).not.toContain('This change touches');
-    expect(body).toContain('- Worked on this part of the code recently');
+    expect(body).toContain(
+      '- **Familiarity:** worked on this part of the code recently',
+    );
   });
 
   it('softens "has not reviewed lately" for a public comment', async () => {
@@ -344,7 +347,9 @@ describe('RelayCommandService reply explains the pick', () => {
     });
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).toContain('- Has had a lighter review load lately');
+    expect(body).toContain(
+      '- **Review load:** has had a lighter review load lately',
+    );
     expect(body).not.toContain('has not reviewed');
   });
 
@@ -424,15 +429,16 @@ describe('RelayCommandService in test mode', () => {
       'org/app',
       7,
       [
-        'Relay would request a review from **EthanHemo**, a good fit for this change.',
+        '#### Suggested reviewer',
+        '**EthanHemo** looks like a good fit for this change.',
         '',
-        '**Why EthanHemo**',
-        '- Worked on this part of the code recently',
-        '- Has no open reviews',
+        '- **Familiarity:** worked on this part of the code recently',
+        '- **Availability:** has no open reviews',
         '',
-        'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
+        '<sub>Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.</sub>',
         '',
-        '_Test mode: no review was requested._',
+        '> [!NOTE]',
+        '> Test mode: no review was requested, and EthanHemo was not notified.',
       ].join('\n'),
     );
     const body = github.createIssueComment.mock.calls[0][2] as string;

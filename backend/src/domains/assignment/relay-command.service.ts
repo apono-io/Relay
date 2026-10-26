@@ -210,30 +210,51 @@ const PUBLIC_PHRASE: Record<string, string> = {
   'has not reviewed lately': 'has had a lighter review load lately',
 };
 
-function capitalize(phrase: string): string {
-  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+// The same three checks the app's "Why?" popover names.
+function reasonLabel(phrase: string): string | null {
+  if (phrase.startsWith('worked') || phrase.startsWith('knows')) {
+    return 'Familiarity';
+  }
+  if (phrase === 'has no open reviews' || phrase === 'is available to review') {
+    return 'Availability';
+  }
+  if (phrase === 'has had a lighter review load lately') {
+    return 'Review load';
+  }
+  return null;
 }
 
+const FAIRNESS_NOTE =
+  '<sub>Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.</sub>';
+
 // In test mode (shadow) the reviewer is named in bold, not @-mentioned, so they get
-// no notification, and the reply says no review was requested.
+// no notification, and a note says no review was requested.
 function assignedReply(pick: PickedReviewer): string {
   const live = pick.shadow === false;
   const reasons = (pick.reason ?? '')
     .split(' and ')
     .map((phrase) => phrase.trim())
     .filter(Boolean)
-    .map((phrase) => `- ${capitalize(PUBLIC_PHRASE[phrase] ?? phrase)}`);
+    .map((phrase) => PUBLIC_PHRASE[phrase] ?? phrase)
+    .map((phrase) => {
+      const label = reasonLabel(phrase);
+      return label ? `- **${label}:** ${phrase}` : `- ${phrase}`;
+    });
   return [
-    live
-      ? `Requested a review from @${pick.login}, a good fit for this change.`
-      : `Relay would request a review from **${pick.login}**, a good fit for this change.`,
+    live ? '#### Review requested' : '#### Suggested reviewer',
+    `${live ? `@${pick.login}` : `**${pick.login}**`} looks like a good fit for this change.`,
     '',
-    `**Why ${pick.login}**`,
-    ...(pick.area ? [`This change touches ${pick.area}.`] : []),
+    ...(pick.area ? [`This change touches **${pick.area}**.`, ''] : []),
     ...reasons,
     '',
-    'Relay weighs recent work on the code, current review load, and recent reviews the same way for everyone.',
-    ...(live ? [] : ['', '_Test mode: no review was requested._']),
+    FAIRNESS_NOTE,
+    ...(live
+      ? []
+      : [
+          '',
+          '> [!NOTE]',
+          `> Test mode: no review was requested, and ${pick.login} was not notified.`,
+        ]),
   ].join('\n');
 }
 
@@ -245,9 +266,9 @@ function replyText(
     case 'assigned':
       return pick ? assignedReply(pick) : null;
     case 'skipped':
-      return 'Got it. Relay will stay off this pull request.';
+      return "#### Relay will stay off this pull request\nGot it. Relay won't pick a reviewer here.";
     case 'refused':
-      return `Relay didn't pick a reviewer: ${result.reason}`;
+      return `#### No reviewer picked\n${result.reason}`;
     case 'not-author':
     case 'ignored':
       return null;
