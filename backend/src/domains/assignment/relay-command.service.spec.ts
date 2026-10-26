@@ -24,7 +24,7 @@ function chainableQb() {
 }
 
 function commandEvent(
-  command: 'assign' | 'skip',
+  command: 'assign' | 'skip' | 'help' | 'unknown',
   actorLogin = 'author',
   overrides: Record<string, unknown> = {},
 ) {
@@ -123,6 +123,7 @@ describe('RelayCommandService.processPending', () => {
       refused: 0,
       notAuthor: 0,
       ignored: 0,
+      answered: 0,
     });
     expect(outcomePatches(qb)).toEqual([{ outcome: 'assigned' }]);
   });
@@ -206,6 +207,7 @@ describe('RelayCommandService.processPending', () => {
       refused: 0,
       notAuthor: 0,
       ignored: 0,
+      answered: 0,
     });
   });
 
@@ -470,5 +472,49 @@ describe('RelayCommandService in test mode', () => {
     github.canWrite.mockReturnValueOnce(true).mockReturnValue(false);
     await service.processPending(NOW);
     expect(github.createIssueComment).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RelayCommandService help', () => {
+  const HELP = [
+    '#### Relay commands',
+    'Comment one of these on a pull request you opened:',
+    '',
+    '- `@relay assign`: Relay requests a reviewer who looks like a good fit, and explains why.',
+    '- `@relay skip`: Relay stays off this pull request.',
+    '- `@relay help`: this list.',
+    '',
+    '<sub>Relay acts only on commands from the pull request author.</sub>',
+  ].join('\n');
+
+  it('answers @relay help with the command list, also for someone other than the author', async () => {
+    const { service, qb, github, actions } = setup([
+      commandEvent('help', 'reviewer'),
+    ]);
+    const summary = await service.processPending(NOW);
+    expect(actions.assign).not.toHaveBeenCalled();
+    expect(summary.answered).toBe(1);
+    expect(outcomePatches(qb)).toEqual([{ outcome: 'answered' }]);
+    expect(github.createIssueComment).toHaveBeenCalledWith('org/app', 7, HELP);
+  });
+
+  it('tells the author an unknown command is not known yet, with the list', async () => {
+    const { service, github } = setup([commandEvent('unknown')]);
+    await service.processPending(NOW);
+    expect(github.createIssueComment).toHaveBeenCalledWith(
+      'org/app',
+      7,
+      HELP.replace(
+        '#### Relay commands\n',
+        "#### Relay commands\nRelay doesn't know that command yet.\n\n",
+      ),
+    );
+  });
+
+  it('stays quiet on an unknown command from someone else', async () => {
+    const { service, github } = setup([commandEvent('unknown', 'reviewer')]);
+    const summary = await service.processPending(NOW);
+    expect(summary.notAuthor).toBe(1);
+    expect(github.createIssueComment).not.toHaveBeenCalled();
   });
 });

@@ -129,6 +129,7 @@ function build(deps: Deps = {}) {
             refused: 0,
             notAuthor: 0,
             ignored: 0,
+            answered: 0,
           });
     }),
   };

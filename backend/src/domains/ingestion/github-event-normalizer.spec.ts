@@ -222,8 +222,13 @@ describe('GithubEventNormalizer', () => {
       ['> @relay assign', null],
       ['```\n@relay assign\n```', null],
       ['@relayer assign', null],
-      ['@relay unknown', null],
-      ['@relay assignment', null],
+      ['@relay unknown', 'unknown'],
+      ['@relay assignment', 'unknown'],
+      ['@relay help', 'help'],
+      ['@Relay HELP me', 'help'],
+      ['/relay help', 'help'],
+      ['@relay', 'help'],
+      ["don't @relay help", null],
       [null, null],
     ])('parses %j as %j', (body, expected) => {
       expect(parseRelayCommand(body)).toBe(expected);

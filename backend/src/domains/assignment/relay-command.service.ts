@@ -21,7 +21,7 @@ import { AssignmentActionsService } from './assignment-actions.service';
 import { RelayAssignment } from './models/relay-assignment.model';
 
 export type CommandOutcome =
-  'assigned' | 'skipped' | 'refused' | 'not-author' | 'ignored';
+  'assigned' | 'skipped' | 'refused' | 'not-author' | 'ignored' | 'answered';
 
 export type CommandSummary = {
   assigned: number;
@@ -29,6 +29,7 @@ export type CommandSummary = {
   refused: number;
   notAuthor: number;
   ignored: number;
+  answered: number;
 };
 
 const SUMMARY_KEY: Record<CommandOutcome, keyof CommandSummary> = {
@@ -37,6 +38,7 @@ const SUMMARY_KEY: Record<CommandOutcome, keyof CommandSummary> = {
   refused: 'refused',
   'not-author': 'notAuthor',
   ignored: 'ignored',
+  answered: 'answered',
 };
 
 const UNKNOWN_ACCOUNT_REASON =
@@ -47,7 +49,10 @@ type PickedReviewer = Pick<
   RelayAssignment,
   'login' | 'area' | 'reason' | 'shadow' | 'signals'
 >;
-type HandledCommand = CommandResult & { pick?: PickedReviewer };
+type HandledCommand = CommandResult & {
+  pick?: PickedReviewer;
+  unknownCommand?: boolean;
+};
 
 @Injectable()
 export class RelayCommandService {
@@ -68,6 +73,7 @@ export class RelayCommandService {
       refused: 0,
       notAuthor: 0,
       ignored: 0,
+      answered: 0,
     };
     const maxAgeHours = numberSetting(
       this.configService,
@@ -97,12 +103,15 @@ export class RelayCommandService {
       if (!(await this.claim(event.id, now))) {
         continue;
       }
-      const { pick, ...result } = await this.handle(event, stats);
+      const { pick, unknownCommand, ...result } = await this.handle(
+        event,
+        stats,
+      );
       await this.mergePayload(event.id, result);
       // Replies go out only as the App, also in test mode, where nobody is requested or
       // mentioned; Relay re-checks before every reply.
       if (event.occurredAt >= since && this.github.canWrite()) {
-        await this.reply(event, result, pick);
+        await this.reply(event, result, pick, unknownCommand);
       }
       summary[SUMMARY_KEY[result.outcome]] += 1;
     }
@@ -114,6 +123,11 @@ export class RelayCommandService {
     stats: CandidateStats,
   ): Promise<HandledCommand> {
     const pr = event.pullRequest;
+    const command = event.payload?.command as RelayCommand;
+    // Help changes nothing, so anyone on the pull request may ask for it.
+    if (command === 'help') {
+      return { outcome: 'answered' };
+    }
     const commenter = stats.personByLogin.get(
       (event.actorLogin ?? '').toLowerCase(),
     );
@@ -134,7 +148,9 @@ export class RelayCommandService {
       return { outcome: 'ignored' };
     }
 
-    const command = event.payload?.command as RelayCommand;
+    if (command === 'unknown') {
+      return { outcome: 'answered', unknownCommand: true };
+    }
     if (command === 'skip') {
       return { outcome: 'skipped' };
     }
@@ -164,8 +180,9 @@ export class RelayCommandService {
     event: PrEvent,
     result: CommandResult,
     pick: PickedReviewer | undefined,
+    unknownCommand = false,
   ): Promise<void> {
-    const body = replyText(result, pick);
+    const body = replyText(result, pick, unknownCommand);
     if (!body) {
       return;
     }
@@ -295,9 +312,24 @@ function assignedReply(pick: PickedReviewer): string {
   ].join('\n');
 }
 
+function helpReply(unknownCommand: boolean): string {
+  return [
+    '#### Relay commands',
+    ...(unknownCommand ? ["Relay doesn't know that command yet.", ''] : []),
+    'Comment one of these on a pull request you opened:',
+    '',
+    '- `@relay assign`: Relay requests a reviewer who looks like a good fit, and explains why.',
+    '- `@relay skip`: Relay stays off this pull request.',
+    '- `@relay help`: this list.',
+    '',
+    '<sub>Relay acts only on commands from the pull request author.</sub>',
+  ].join('\n');
+}
+
 function replyText(
   result: CommandResult,
   pick: PickedReviewer | undefined,
+  unknownCommand = false,
 ): string | null {
   switch (result.outcome) {
     case 'assigned':
@@ -306,6 +338,8 @@ function replyText(
       return "#### Relay will stay off this pull request\nGot it. Relay won't pick a reviewer here.";
     case 'refused':
       return `#### No reviewer picked\n${result.reason}`;
+    case 'answered':
+      return helpReply(unknownCommand);
     case 'not-author':
     case 'ignored':
       return null;
