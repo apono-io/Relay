@@ -29,7 +29,8 @@ export function SystemSettingsPage() {
           { value: 'repositories', label: 'Repositories' },
           { value: 'areas', label: 'Code areas' },
           { value: 'teams', label: 'Teams' },
-          { value: 'engine', label: 'Assignment engine' },
+          { value: 'engine', label: 'Engine settings' },
+          { value: 'engine-analytics', label: 'Engine analytics' },
         ]
       : []),
   ];
@@ -54,6 +55,10 @@ export function SystemSettingsPage() {
               <Stack spacing={3}>
                 <AssignmentControls />
                 <TeamLeadThreshold />
+              </Stack>
+            )}
+            {tab === 'engine-analytics' && (
+              <Stack spacing={3}>
                 <EnginePerformance />
                 <AssignmentQuietPhase />
               </Stack>

@@ -16,6 +16,9 @@ export function SettingsTabs({
       <Tabs
         value={value}
         onChange={(_event, next: string) => onChange(next)}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
         sx={{
           minHeight: 40,
           '& .MuiTab-root': {

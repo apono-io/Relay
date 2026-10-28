@@ -125,7 +125,7 @@ export function TeamsSettings() {
           </Box>{' '}
           picks a reviewer from the pull request author&apos;s team. The lead is asked only when
           every other member already has the lead threshold of open reviews or more. The
-          threshold is one setting for every team, under Assignment engine.
+          threshold is one setting for every team, under Engine settings.
         </Typography>
       </Box>
 
