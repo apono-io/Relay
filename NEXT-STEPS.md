@@ -85,9 +85,9 @@ Two switches keep this safe. `assignment.actuallyAssign` defaults to **off**, so
 are recorded and displayed but never written to GitHub. The PAT is read-only, so turning
 that switch on also requires a write-scoped token.
 
-An admin performance view reports whether the engine is being used and whether it is
-right: agreement with what the team actually did, usage over time, per-area breakdown,
-and how picks spread across people.
+The admin Engine analytics tab counts only the reviews Relay requested on GitHub, while
+Actually assign was on: the time from the request to the first review, how often the
+picked person reviewed, how many reviews it requested, and the weekly time to first review.
 
 ### Next — Slack delivery (designed, not started)
 

@@ -5,180 +5,153 @@ import {
 
 function row(overrides: Partial<PerformanceRow> = {}): PerformanceRow {
   return {
-    generatedAt: new Date('2026-03-02T10:00:00Z'),
-    resolvedAt: null,
-    matched: null,
-    assignedAt: null,
-    assignedTrigger: null,
-    shadow: null,
-    area: null,
-    pickedName: 'Adi Tamir',
+    shadow: false,
+    requestedAt: new Date('2026-03-02T10:00:00Z'),
+    requestedLogin: 'adi-tamir',
+    firstReviewAt: null,
+    reviews: [],
     ...overrides,
   };
 }
 
+const hoursAfterRequest = (hours: number) =>
+  new Date(new Date('2026-03-02T10:00:00Z').getTime() + hours * 3_600_000);
+
 describe('buildPerformance', () => {
-  it('returns empty aggregates with no rows', () => {
-    const result = buildPerformance([], 12);
-    expect(result.totals.recorded).toBe(0);
-    expect(result.totals.agreementRate).toBeNull();
-    expect(result.totals.coverageRate).toBeNull();
-    expect(result.totals.medianDecisionSeconds).toBeNull();
-    expect(result.weekly).toEqual([]);
-    expect(result.byArea).toEqual([]);
-    expect(result.spread).toEqual([]);
+  it('returns empty numbers with no requests', () => {
+    expect(buildPerformance([], 12)).toEqual({
+      requested: 0,
+      reviewed: 0,
+      reviewedByPick: 0,
+      pickReviewedRate: null,
+      medianFirstReviewSeconds: null,
+      weekly: [],
+    });
   });
 
-  it('counts agreement only over decided rows', () => {
+  it('counts only reviews Relay requested on GitHub, while Actually assign was on', () => {
     const result = buildPerformance(
       [
-        row({ matched: true, resolvedAt: new Date('2026-03-02T11:00:00Z') }),
-        row({ matched: false, resolvedAt: new Date('2026-03-02T11:00:00Z') }),
+        row(),
+        row({ shadow: true, firstReviewAt: hoursAfterRequest(1) }),
+        row({ shadow: null, firstReviewAt: hoursAfterRequest(1) }),
+      ],
+      12,
+    );
+    expect(result.requested).toBe(1);
+    expect(result.reviewed).toBe(0);
+    expect(result.medianFirstReviewSeconds).toBeNull();
+  });
+
+  it('measures the first review from the moment Relay requested it', () => {
+    const result = buildPerformance(
+      [
+        row({ firstReviewAt: hoursAfterRequest(1) }),
+        row({ firstReviewAt: hoursAfterRequest(2) }),
+        row({ firstReviewAt: hoursAfterRequest(5) }),
         row(),
       ],
       12,
     );
-    expect(result.totals.recorded).toBe(3);
-    expect(result.totals.decided).toBe(2);
-    expect(result.totals.agreements).toBe(1);
-    expect(result.totals.agreementRate).toBeCloseTo(0.5);
-    expect(result.totals.awaiting).toBe(1);
+    expect(result.reviewed).toBe(3);
+    expect(result.medianFirstReviewSeconds).toBe(7200);
   });
 
-  it('manualAssigned counts comment-triggered assignments', () => {
-    const at = new Date('2026-03-02T12:00:00Z');
+  it('does not count a review that came before the request', () => {
     const result = buildPerformance(
-      [
-        row({ assignedAt: at, assignedTrigger: 'manual', shadow: true }),
-        row({ assignedAt: at, assignedTrigger: 'comment', shadow: true }),
-        row({ assignedAt: at, assignedTrigger: 'auto', shadow: true }),
-      ],
+      [row({ firstReviewAt: hoursAfterRequest(-1) })],
       12,
     );
-    expect(result.totals.manualAssigned).toBe(2);
-    expect(result.totals.autoAssigned).toBe(1);
+    expect(result.reviewed).toBe(0);
+    expect(result.medianFirstReviewSeconds).toBeNull();
   });
 
-  it('separates automatic from manual assignments', () => {
+  it('shares reviewed-by-the-pick over the requests that got a review', () => {
     const result = buildPerformance(
       [
         row({
-          assignedAt: new Date('2026-03-02T12:00:00Z'),
-          assignedTrigger: 'auto',
-          shadow: true,
+          firstReviewAt: hoursAfterRequest(1),
+          reviews: [{ login: 'Adi-Tamir', at: hoursAfterRequest(1) }],
         }),
         row({
-          assignedAt: new Date('2026-03-02T12:00:00Z'),
-          assignedTrigger: 'manual',
-          shadow: false,
+          firstReviewAt: hoursAfterRequest(1),
+          reviews: [
+            { login: 'omer-tal', at: hoursAfterRequest(1) },
+            { login: 'adi-tamir', at: hoursAfterRequest(3) },
+          ],
+        }),
+        row({
+          firstReviewAt: hoursAfterRequest(1),
+          reviews: [{ login: 'omer-tal', at: hoursAfterRequest(1) }],
         }),
         row(),
       ],
       12,
     );
-    expect(result.totals.assigned).toBe(2);
-    expect(result.totals.autoAssigned).toBe(1);
-    expect(result.totals.manualAssigned).toBe(1);
-    expect(result.totals.liveAssigned).toBe(1);
+    expect(result.reviewed).toBe(3);
+    expect(result.reviewedByPick).toBe(2);
+    expect(result.pickReviewedRate).toBeCloseTo(2 / 3);
   });
 
-  it('treats a row without a pick as uncovered', () => {
-    const result = buildPerformance([row({ pickedName: null }), row()], 12);
-    expect(result.totals.coverageRate).toBeCloseTo(0.5);
-    expect(result.totals.peoplePicked).toBe(1);
-  });
-
-  it('reports the median decision latency in seconds', () => {
+  it("does not count the pick's review from before the request", () => {
     const result = buildPerformance(
       [
         row({
-          matched: true,
-          generatedAt: new Date('2026-03-02T10:00:00Z'),
-          resolvedAt: new Date('2026-03-02T10:10:00Z'),
-        }),
-        row({
-          matched: false,
-          generatedAt: new Date('2026-03-02T10:00:00Z'),
-          resolvedAt: new Date('2026-03-02T10:30:00Z'),
+          firstReviewAt: hoursAfterRequest(1),
+          reviews: [
+            { login: 'adi-tamir', at: hoursAfterRequest(-2) },
+            { login: 'omer-tal', at: hoursAfterRequest(1) },
+          ],
         }),
       ],
       12,
     );
-    expect(result.totals.medianDecisionSeconds).toBe(1200);
+    expect(result.reviewedByPick).toBe(0);
   });
 
-  it('groups rows into weeks starting on Monday', () => {
+  it('groups requests into weeks starting on Monday, with each week’s median', () => {
     const result = buildPerformance(
       [
-        row({ generatedAt: new Date('2026-03-03T10:00:00Z') }),
-        row({ generatedAt: new Date('2026-03-05T10:00:00Z') }),
-        row({ generatedAt: new Date('2026-03-10T10:00:00Z') }),
+        row({
+          requestedAt: new Date('2026-03-03T10:00:00Z'),
+          firstReviewAt: new Date('2026-03-03T11:00:00Z'),
+        }),
+        row({
+          requestedAt: new Date('2026-03-05T10:00:00Z'),
+          firstReviewAt: new Date('2026-03-05T13:00:00Z'),
+        }),
+        row({ requestedAt: new Date('2026-03-10T10:00:00Z') }),
       ],
       12,
     );
-    expect(result.weekly).toHaveLength(2);
-    expect(result.weekly[0].recorded).toBe(2);
-    expect(result.weekly[1].recorded).toBe(1);
-    expect(result.weekly[0].weekStart < result.weekly[1].weekStart).toBe(true);
-  });
-
-  it('keeps only the requested number of trailing weeks', () => {
-    const rows = [
-      row({ generatedAt: new Date('2026-01-05T10:00:00Z') }),
-      row({ generatedAt: new Date('2026-01-12T10:00:00Z') }),
-      row({ generatedAt: new Date('2026-01-19T10:00:00Z') }),
-    ];
-    const result = buildPerformance(rows, 2);
-    expect(result.weekly).toHaveLength(2);
-    expect(result.weekly[0].weekStart).toBe('2026-01-12');
-  });
-
-  it('labels an unmapped area as whole repo', () => {
-    const result = buildPerformance([row({ area: null })], 12);
-    expect(result.byArea[0].area).toBe('Whole repo');
-  });
-
-  it('orders areas by how often they came up', () => {
-    const result = buildPerformance(
-      [
-        row({ area: 'Backend Core' }),
-        row({ area: 'Portal' }),
-        row({ area: 'Portal' }),
-      ],
-      12,
-    );
-    expect(result.byArea.map((point) => point.area)).toEqual([
-      'Portal',
-      'Backend Core',
+    expect(result.weekly).toEqual([
+      {
+        week: 'Mar 2',
+        weekStart: '2026-03-02',
+        requested: 2,
+        medianFirstReviewSeconds: 7200,
+      },
+      {
+        week: 'Mar 9',
+        weekStart: '2026-03-09',
+        requested: 1,
+        medianFirstReviewSeconds: null,
+      },
     ]);
   });
 
-  it('counts how picks spread across people', () => {
+  it('keeps only the trailing weeks it is asked for', () => {
     const result = buildPerformance(
       [
-        row({ pickedName: 'Adi Tamir' }),
-        row({ pickedName: 'Adi Tamir' }),
-        row({ pickedName: 'Omer Tal' }),
+        row({ requestedAt: new Date('2026-01-05T10:00:00Z') }),
+        row({ requestedAt: new Date('2026-01-12T10:00:00Z') }),
+        row({ requestedAt: new Date('2026-01-19T10:00:00Z') }),
       ],
-      12,
+      2,
     );
-    expect(result.spread).toEqual([
-      { displayName: 'Adi Tamir', picks: 2 },
-      { displayName: 'Omer Tal', picks: 1 },
+    expect(result.weekly.map((point) => point.weekStart)).toEqual([
+      '2026-01-12',
+      '2026-01-19',
     ]);
-  });
-
-  it('ignores a negative latency caused by clock skew', () => {
-    const result = buildPerformance(
-      [
-        row({
-          matched: true,
-          generatedAt: new Date('2026-03-02T10:00:00Z'),
-          resolvedAt: new Date('2026-03-02T09:00:00Z'),
-        }),
-      ],
-      12,
-    );
-    expect(result.totals.medianDecisionSeconds).toBeNull();
   });
 });

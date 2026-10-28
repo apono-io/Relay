@@ -4,10 +4,8 @@ import { AuthenticatedUser } from '@/core/auth/models/auth-user.model';
 import { RequirePermissions } from '@/core/rbac/require-permissions.decorator';
 import { Permissions } from '@/core/rbac/permissions.constants';
 import { PeopleService } from '@/domains/people/people.service';
-import { SuggestionService } from './suggestion.service';
 import { AssignmentActionsService } from './assignment-actions.service';
 import { AppSettingsService } from './app-settings.service';
-import { AssignmentComparison } from './models/assignment-comparison.model';
 import { AssignmentPerformance } from './models/assignment-performance.model';
 import { AssignmentPerformanceService } from './assignment-performance.service';
 import {
@@ -15,21 +13,14 @@ import {
   RelayAssignment,
 } from './models/relay-assignment.model';
 
-@Resolver(() => AssignmentComparison)
+@Resolver()
 export class AssignmentResolver {
   constructor(
-    private readonly suggestions: SuggestionService,
     private readonly actions: AssignmentActionsService,
     private readonly appSettings: AppSettingsService,
     private readonly people: PeopleService,
     private readonly performanceService: AssignmentPerformanceService,
   ) {}
-
-  @Query(() => AssignmentComparison, { name: 'assignmentComparison' })
-  @RequirePermissions(Permissions.SETTINGS_ADMIN)
-  assignmentComparison(): Promise<AssignmentComparison> {
-    return this.suggestions.comparison();
-  }
 
   @Query(() => AssignmentPerformance, { name: 'assignmentPerformance' })
   @RequirePermissions(Permissions.SETTINGS_ADMIN)

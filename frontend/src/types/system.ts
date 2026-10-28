@@ -19,75 +19,20 @@ export type PickSignals = {
   reviewsLast14Days: number;
 };
 
-export type SuggestionOutcomeRow = {
-  id: string;
-  repo: string;
-  prNumber: number;
-  prTitle: string;
-  prUrl: string;
-  area: string | null;
-  suggestedName: string;
-  suggestedLogin: string;
-  reason: string;
-  signals: PickSignals | null;
-  actualNames: string[];
-  matched: boolean | null;
-  generatedAt: string;
-  resolvedAt: string | null;
-};
-
-export type AssignmentComparison = {
-  recorded: number;
-  awaiting: number;
-  decided: number;
-  agreements: number;
-  agreementRate: number | null;
-  rows: SuggestionOutcomeRow[];
-};
-
-export type AssignmentTotals = {
-  recorded: number;
-  decided: number;
-  agreements: number;
-  awaiting: number;
-  assigned: number;
-  autoAssigned: number;
-  manualAssigned: number;
-  liveAssigned: number;
-  peoplePicked: number;
-  agreementRate: number | null;
-  coverageRate: number | null;
-  medianDecisionSeconds: number | null;
-};
-
 export type AssignmentWeekPoint = {
   week: string;
   weekStart: string;
-  recorded: number;
-  decided: number;
-  agreements: number;
-  assigned: number;
-  agreementRate: number | null;
-};
-
-export type AssignmentAreaPoint = {
-  area: string;
-  recorded: number;
-  decided: number;
-  agreements: number;
-  agreementRate: number | null;
-};
-
-export type AssignmentSpreadPoint = {
-  displayName: string;
-  picks: number;
+  requested: number;
+  medianFirstReviewSeconds: number | null;
 };
 
 export type AssignmentPerformance = {
-  totals: AssignmentTotals;
+  requested: number;
+  reviewed: number;
+  reviewedByPick: number;
+  pickReviewedRate: number | null;
+  medianFirstReviewSeconds: number | null;
   weekly: AssignmentWeekPoint[];
-  byArea: AssignmentAreaPoint[];
-  spread: AssignmentSpreadPoint[];
 };
 
 export type Team = {

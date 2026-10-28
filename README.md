@@ -63,7 +63,7 @@ Tiltfile    runs backend + frontend locally
 | `domains/pull-requests` | `PullRequest` + `PrEvent` entities and the `PhaseComputer` (phases + per-round Reviewer/Author waits + waiting_on). |
 | `domains/ingestion` | `GithubEventNormalizer` (canonical event ids), `BackfillService`, and the webhook controller (deployed path). |
 | `domains/repos` | Watched repositories (add with GitHub validation) and per-repo area rules with private risk levels. |
-| `domains/assignment` | Deterministic reviewer-assignment engine (area knowledge from PR history, availability, fairness), the assign/reset actions, per-person assignment modes, and the engine performance view. |
+| `domains/assignment` | Deterministic reviewer-assignment engine (area knowledge from PR history, availability, fairness), the assign/reset actions, per-person assignment modes, and Engine analytics (live requests only). |
 | `domains/metrics` | Dashboard + analytics aggregation (median + p90 per wait round, cycle, weekly flow, quality guardrails). |
 | `scheduler` | `@nestjs/schedule` jobs: gap-fill every minute + boot (the local live mechanism, with a stale-PR reconcile pass), the assignment sweep every five minutes, and metrics refresh. |
 

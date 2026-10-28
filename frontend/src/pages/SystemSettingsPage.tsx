@@ -6,7 +6,6 @@ import { PeopleSettings } from '@/components/people/PeopleSettings';
 import { RepositoriesSettings } from '@/components/system/RepositoriesSettings';
 import { AreaRulesSettings } from '@/components/system/AreaRulesSettings';
 import { TeamsSettings } from '@/components/system/TeamsSettings';
-import { AssignmentQuietPhase } from '@/components/system/AssignmentQuietPhase';
 import { EnginePerformance } from '@/components/system/EnginePerformance';
 import { AssignmentControls } from '@/components/system/AssignmentControls';
 import { TeamLeadThreshold } from '@/components/system/TeamLeadThreshold';
@@ -57,12 +56,7 @@ export function SystemSettingsPage() {
                 <TeamLeadThreshold />
               </Stack>
             )}
-            {tab === 'engine-analytics' && (
-              <Stack spacing={3}>
-                <EnginePerformance />
-                <AssignmentQuietPhase />
-              </Stack>
-            )}
+            {tab === 'engine-analytics' && <EnginePerformance />}
           </Stack>
         ) : (
           <Skeleton variant="rounded" height={360} />

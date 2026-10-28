@@ -6,23 +6,16 @@ import { In, IsNull, Repository } from 'typeorm';
 import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entity';
 import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { PrEventType, PrState } from '@/domains/pull-requests/pr-enums';
-import { PeopleService } from '@/domains/people/people.service';
 import { numberSetting } from '@/core/config/config-number';
 import { Suggestion } from './entities/suggestion.entity';
 import { AssignmentEngine, DEFAULT_ENGINE_CONFIG } from './assignment-engine';
 import { CandidateStatsService, PersonRef } from './candidate-stats.service';
-import {
-  AssignmentComparison,
-  SuggestionOutcomeRow,
-} from './models/assignment-comparison.model';
 
 export type SweepSummary = {
   prsConsidered: number;
   suggestionsRecorded: number;
   outcomesResolved: number;
 };
-
-const COMPARISON_ROWS = 50;
 
 @Injectable()
 export class SuggestionService {
@@ -34,7 +27,6 @@ export class SuggestionService {
     @InjectRepository(PrEvent)
     private readonly eventRepo: Repository<PrEvent>,
     private readonly candidateStats: CandidateStatsService,
-    private readonly people: PeopleService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -174,73 +166,5 @@ export class SuggestionService {
         actualPersonIds.has(pick.personId) ||
         actualLoginSet.has(pick.login.toLowerCase()),
     );
-  }
-
-  async comparison(): Promise<AssignmentComparison> {
-    const [suggestions, people] = await Promise.all([
-      this.suggestionRepo.find({
-        order: { generatedAt: 'DESC' },
-        take: COMPARISON_ROWS,
-      }),
-      this.people.findAll(),
-    ]);
-    const nameByLogin = new Map<string, string>();
-    for (const person of people) {
-      for (const identity of person.identities) {
-        nameByLogin.set(
-          identity.login.toLowerCase(),
-          person.displayName || person.email,
-        );
-      }
-    }
-    const [recorded, awaiting, decided, agreements] = await Promise.all([
-      this.suggestionRepo.count(),
-      this.suggestionRepo.count({ where: { resolvedAt: IsNull() } }),
-      this.suggestionRepo
-        .createQueryBuilder('s')
-        .where('s."matched" IS NOT NULL')
-        .getCount(),
-      this.suggestionRepo.count({ where: { matched: true } }),
-    ]);
-
-    const prs = await this.prRepo.find({
-      where: { id: In(suggestions.map((row) => row.prId)) },
-      select: ['id', 'title', 'url'],
-    });
-    const prById = new Map(prs.map((pr) => [pr.id, pr]));
-
-    const rows: SuggestionOutcomeRow[] = suggestions.map((suggestion) => {
-      const pr = prById.get(suggestion.prId);
-      const pick = suggestion.picks[0];
-      return {
-        id: suggestion.id,
-        repo: suggestion.repo,
-        prNumber: suggestion.prNumber,
-        prTitle: pr?.title ?? `#${suggestion.prNumber}`,
-        prUrl:
-          pr?.url ??
-          `https://github.com/${suggestion.repo}/pull/${suggestion.prNumber}`,
-        area: suggestion.area,
-        suggestedName: pick?.displayName ?? 'Nobody eligible',
-        suggestedLogin: pick?.login ?? '',
-        reason: pick?.reason ?? '',
-        signals: pick?.signals ?? null,
-        actualNames: suggestion.actualLogins.map(
-          (login) => nameByLogin.get(login.toLowerCase()) ?? login,
-        ),
-        matched: suggestion.matched,
-        generatedAt: suggestion.generatedAt,
-        resolvedAt: suggestion.resolvedAt,
-      };
-    });
-
-    return {
-      recorded,
-      awaiting,
-      decided,
-      agreements,
-      agreementRate: decided > 0 ? agreements / decided : null,
-      rows,
-    };
   }
 }

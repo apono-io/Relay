@@ -1,5 +1,19 @@
 import { ObjectType, Field, Int, GraphQLISODateTime } from '@nestjs/graphql';
-import { PickSignals } from './assignment-comparison.model';
+
+@ObjectType()
+export class PickSignals {
+  @Field(() => Int, { nullable: true })
+  areaRank?: number | null;
+
+  @Field(() => Int)
+  areaPool: number;
+
+  @Field(() => Int)
+  openReviewRequests: number;
+
+  @Field(() => Int)
+  reviewsLast14Days: number;
+}
 
 @ObjectType()
 export class RelayAssignment {
