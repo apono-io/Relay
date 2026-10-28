@@ -120,8 +120,11 @@ export function TeamsSettings() {
           Teams
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          `@relay team` picks a reviewer from the pull request author&apos;s team. The lead is
-          asked only when every other member already has the threshold of open reviews or more.
+          <Box component="code" sx={{ fontFamily: 'monospace', fontSize: '0.92em' }}>
+            @relay team
+          </Box>{' '}
+          picks a reviewer from the pull request author&apos;s team. The lead is asked only when
+          every other member already has the threshold of open reviews or more.
         </Typography>
       </Box>
 
