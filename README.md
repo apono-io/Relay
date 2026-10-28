@@ -24,10 +24,13 @@ frontend, Google OAuth for login, and Tilt for local orchestration.
   checklist of the pull requests where it is genuinely your turn (merge it, get a
   reviewer, fix the checks, address feedback), one action button each, with everything
   that waits on someone else folded away.
-- **`@relay` comment commands** — the PR author comments `@relay assign` to have Relay
-  pick a good-fit reviewer, or `@relay skip` to keep Relay off that PR. Relay reads them
+- **`@relay` comment commands** — the PR author comments `@relay` to have Relay pick a
+  good-fit reviewer, `@relay team` to pick from their own team (the team lead only when
+  everyone else is loaded), `@relay skip` to keep Relay off that PR, or `@relay help`. Relay reads them
   within seconds and replies on the PR as `apono-relay[bot]` with the pick and why. While
   live assignment is off, the reply names the pick without notifying them.
+- **Teams** (in System settings, admins only) — name, lead, lead threshold and members,
+  one team per person.
 - **My Reviews** — the reviews still open for you; a PR you have approved drops out.
 - **People & roster** (in System settings, admins only) — people seeded from commit
   author emails, GitHub identity linking, manual entry, and an active/disabled switch
