@@ -38,7 +38,8 @@ import type { Team } from '@/types/system';
 const NO_LEAD = '';
 
 function personLabel(person: Person): string {
-  return person.displayName || person.email;
+  const name = person.displayName || person.email;
+  return person.active ? name : `${name} (inactive)`;
 }
 
 export function TeamsSettings() {
@@ -55,14 +56,19 @@ export function TeamsSettings() {
   }>(SET_TEAM_MEMBERS);
 
   const teams = teamsQuery.data?.teams ?? [];
-  const people = useMemo(
+  // Everyone, inactive included, so an edit never drops an inactive member or lead it
+  // cannot see; only active people can be newly picked.
+  const allPeople = useMemo(
     () =>
-      [...(peopleQuery.data?.people ?? [])]
-        .filter((person) => person.active)
-        .sort((a, b) => personLabel(a).localeCompare(personLabel(b))),
+      [...(peopleQuery.data?.people ?? [])].sort((a, b) =>
+        personLabel(a).localeCompare(personLabel(b)),
+      ),
     [peopleQuery.data],
   );
-  const personById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
+  const personById = useMemo(
+    () => new Map(allPeople.map((person) => [person.id, person])),
+    [allPeople],
+  );
 
   const run = async (action: () => Promise<unknown>) => {
     setError(null);
@@ -193,11 +199,18 @@ export function TeamsSettings() {
                       <MenuItem value={NO_LEAD} sx={{ fontSize: 13 }}>
                         No lead
                       </MenuItem>
-                      {people.map((person) => (
-                        <MenuItem key={person.id} value={person.id} sx={{ fontSize: 13 }}>
-                          {personLabel(person)}
-                        </MenuItem>
-                      ))}
+                      {allPeople
+                        .filter((person) => person.active || person.id === team.leadPersonId)
+                        .map((person) => (
+                          <MenuItem
+                            key={person.id}
+                            value={person.id}
+                            disabled={!person.active}
+                            sx={{ fontSize: 13 }}
+                          >
+                            {personLabel(person)}
+                          </MenuItem>
+                        ))}
                     </Select>
                   </TableCell>
                   <TableCell sx={{ width: 140 }}>
@@ -221,7 +234,12 @@ export function TeamsSettings() {
                     <Autocomplete
                       multiple
                       size="small"
-                      options={people.filter((person) => person.id !== team.leadPersonId)}
+                      options={allPeople.filter(
+                        (person) =>
+                          person.id !== team.leadPersonId &&
+                          (person.active || team.memberIds.includes(person.id)),
+                      )}
+                      getOptionDisabled={(person) => !person.active}
                       value={team.memberIds
                         .map((id) => personById.get(id))
                         .filter((person): person is Person => Boolean(person))}
