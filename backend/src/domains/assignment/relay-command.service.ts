@@ -303,8 +303,6 @@ const DEFAULT_RELAY_URL = 'http://localhost:5174';
 const FAIRNESS_NOTE =
   '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>';
 
-// In test mode (shadow) the reviewer is named in bold, not @-mentioned, so they get
-// no notification, and a note says no review was requested.
 // The app's five sensitivity levels (frontend SensitivityDots).
 const SENSITIVITY_WORD: Record<number, string> = {
   1: 'Low',
@@ -319,11 +317,11 @@ function areaLine(pick: PickedReviewer): string | null {
     return null;
   }
   if (!pick.sensitivity) {
-    return `This pull request touches **${pick.area}**.`;
+    return `Touches **${pick.area}**`;
   }
   const level = Math.max(1, Math.min(5, Math.round(pick.sensitivity)));
   const dots = '●'.repeat(level) + '○'.repeat(5 - level);
-  return `This pull request touches **${pick.area}** · Sensitivity ${dots} ${SENSITIVITY_WORD[level]}`;
+  return `Touches **${pick.area}** · Sensitivity ${dots} ${SENSITIVITY_WORD[level]}`;
 }
 
 // Says why the lead was asked, truthfully: loaded teammates, or nobody else pickable.
@@ -344,53 +342,58 @@ function teamLine(pick: PickedReviewer, live: boolean): string | null {
 const relayLink = (relayUrl: string): string =>
   `[Open in Relay](${relayUrl}/dashboard)`;
 
+// A | inside a cell would end it early and shift the row.
+const tableCell = (text: string): string => text.replace(/\|/g, '\\|');
+
+// Laid out like the app's Why popover: area, then one table row per check. In test
+// mode (shadow) the reviewer is named without an @, so they get no notification, and
+// a note says no review was requested. Commands sit in code spans, so they mention nobody.
 function assignedReply(pick: PickedReviewer, relayUrl: string): string {
   const live = pick.shadow === false;
-  const area = areaLine(pick);
-  const team = teamLine(pick, live);
-  // GitHub comments break lines on every newline, so each check sits on its own line.
-  const lines = whyLines(pick).map((line) => {
+  const context = [teamLine(pick, live), areaLine(pick)].filter(
+    (line): line is string => Boolean(line),
+  );
+  const rows = whyLines(pick).map((line) => {
     const mark = line.counted ? '✅' : '⚪';
-    const label = line.category ? `**${line.category}:** ` : '';
-    return `${mark} ${label}${line.text}`;
+    const check = line.category ? `${mark} ${line.category}` : mark;
+    return `| ${check} | ${tableCell(capitalize(line.text))} |`;
   });
   return [
     live
-      ? `Requested a review from @${pick.login}.`
-      : `Relay would request a review from **${pick.login}**.`,
-    ...(team ? [team] : []),
+      ? `### 👀 Relay requested a review from @${pick.login}`
+      : `### 👀 Relay would request a review from ${pick.login}`,
     '',
-    `#### Why ${pick.login}?`,
-    ...(area ? [area, ''] : []),
-    ...lines,
+    ...(context.length ? [...context, ''] : []),
+    `| Check | Why ${pick.login}? |`,
+    '|:--|:--|',
+    ...rows,
     '',
-    FAIRNESS_NOTE,
     ...(live
       ? []
       : [
-          '',
           '> [!NOTE]',
-          `> Test mode: no review was requested, and ${pick.login} was not notified.`,
+          `> **Test mode:** no review was requested, and ${pick.login} was not notified.`,
+          '',
         ]),
-    '',
-    relayLink(relayUrl),
+    FAIRNESS_NOTE,
+    `<sub>${relayLink(relayUrl)} · Commands: \`@relay team\` · \`@relay skip\` · \`@relay help\`</sub>`,
   ].join('\n');
 }
 
 function helpReply(unknownCommand: boolean, relayUrl: string): string {
   return [
-    '#### Relay commands',
-    ...(unknownCommand ? ["Relay doesn't know that command yet.", ''] : []),
-    'Comment one of these on a pull request you opened:',
+    '### 📖 Relay commands',
     '',
-    '- `@relay`: Relay requests a reviewer who looks like a good fit, and explains why.',
-    '- `@relay team`: the same, but only from your team.',
-    '- `@relay skip`: Relay stays off this pull request.',
-    '- `@relay help`: this list.',
+    `${unknownCommand ? "Relay doesn't know that command yet. " : ''}Comment one of these on a pull request you opened.`,
     '',
-    '<sub>Relay acts only on commands from the pull request author.</sub>',
+    '| Command | What it does |',
+    '|:--|:--|',
+    '| `@relay` | Requests a reviewer who looks like a good fit, and explains why |',
+    '| `@relay team` | The same, but only from your team |',
+    '| `@relay skip` | Keeps Relay off this pull request |',
+    '| `@relay help` | Shows this list |',
     '',
-    relayLink(relayUrl),
+    `<sub>Relay acts only on commands from the pull request author · ${relayLink(relayUrl)}</sub>`,
   ].join('\n');
 }
 
@@ -404,9 +407,15 @@ function replyText(
     case 'assigned':
       return pick ? assignedReply(pick, relayUrl) : null;
     case 'skipped':
-      return "#### Relay will stay off this pull request\nGot it. Relay won't pick a reviewer here.";
+      return "### 👋 Relay will stay off this pull request\n\nGot it. Relay won't pick a reviewer here. Comment `@relay` any time you want one.";
     case 'refused':
-      return `#### No reviewer picked\n${result.reason}`;
+      return [
+        '### ✋ No reviewer picked',
+        '',
+        result.reason,
+        '',
+        `<sub>${relayLink(relayUrl)} · \`@relay help\` lists the commands</sub>`,
+      ].join('\n');
     case 'answered':
       return helpReply(unknownCommand, relayUrl);
     case 'not-author':

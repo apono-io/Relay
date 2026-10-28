@@ -234,7 +234,7 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      expect.stringMatching(/^Requested a review from @expert\./),
+      expect.stringMatching(/^### 👀 Relay requested a review from @expert\n/),
     );
   });
 
@@ -244,7 +244,7 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      "#### Relay will stay off this pull request\nGot it. Relay won't pick a reviewer here.",
+      "### 👋 Relay will stay off this pull request\n\nGot it. Relay won't pick a reviewer here. Comment `@relay` any time you want one.",
     );
   });
 
@@ -257,7 +257,13 @@ describe('RelayCommandService replies on GitHub', () => {
     expect(github.createIssueComment).toHaveBeenCalledWith(
       'org/app',
       7,
-      '#### No reviewer picked\nDrafts do not get a reviewer.',
+      [
+        '### ✋ No reviewer picked',
+        '',
+        'Drafts do not get a reviewer.',
+        '',
+        '<sub>[Open in Relay](http://localhost:5174/dashboard) · `@relay help` lists the commands</sub>',
+      ].join('\n'),
     );
   });
 
@@ -322,18 +328,18 @@ describe('RelayCommandService reply explains the pick', () => {
       'org/app',
       7,
       [
-        'Requested a review from @EthanHemo.',
+        '### 👀 Relay requested a review from @EthanHemo',
         '',
-        '#### Why EthanHemo?',
-        'This pull request touches **Frontend** · Sensitivity ●●○○○ Normal',
+        'Touches **Frontend** · Sensitivity ●●○○○ Normal',
         '',
-        '✅ **Familiarity:** worked on Frontend recently',
-        '✅ **Availability:** no open review requests right now',
-        '⚪ **Fairness:** 19 reviews in the last 14 days',
+        '| Check | Why EthanHemo? |',
+        '|:--|:--|',
+        '| ✅ Familiarity | Worked on Frontend recently |',
+        '| ✅ Availability | No open review requests right now |',
+        '| ⚪ Fairness | 19 reviews in the last 14 days |',
         '',
         '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>',
-        '',
-        '[Open in Relay](http://localhost:5174/dashboard)',
+        '<sub>[Open in Relay](http://localhost:5174/dashboard) · Commands: `@relay team` · `@relay skip` · `@relay help`</sub>',
       ].join('\n'),
     );
   });
@@ -352,14 +358,14 @@ describe('RelayCommandService reply explains the pick', () => {
     });
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).not.toContain('This pull request touches');
+    expect(body).not.toContain('Touches');
     expect(body).toContain(
-      '⚪ **Familiarity:** no recent work on this part of the code',
+      '| ⚪ Familiarity | No recent work on this part of the code |',
     );
     expect(body).toContain(
-      '⚪ **Availability:** 1 open review request right now',
+      '| ⚪ Availability | 1 open review request right now |',
     );
-    expect(body).toContain('✅ **Fairness:** no reviews in the last 14 days');
+    expect(body).toContain('| ✅ Fairness | No reviews in the last 14 days |');
   });
 
   it('falls back to the reason phrases when a pick has no signals', async () => {
@@ -371,8 +377,8 @@ describe('RelayCommandService reply explains the pick', () => {
     });
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).toContain('✅ Has no open reviews');
-    expect(body).toContain('✅ Has had a lighter review load lately');
+    expect(body).toContain('| ✅ | Has no open reviews |');
+    expect(body).toContain('| ✅ | Has had a lighter review load lately |');
     expect(body).not.toContain('has not reviewed');
   });
 
@@ -459,23 +465,24 @@ describe('RelayCommandService in test mode', () => {
       'org/app',
       7,
       [
-        'Relay would request a review from **EthanHemo**.',
+        '### 👀 Relay would request a review from EthanHemo',
         '',
-        '#### Why EthanHemo?',
-        '✅ **Familiarity:** worked on this part of the code recently',
-        '✅ **Availability:** no open review requests right now',
-        '⚪ **Fairness:** 19 reviews in the last 14 days',
-        '',
-        '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>',
+        '| Check | Why EthanHemo? |',
+        '|:--|:--|',
+        '| ✅ Familiarity | Worked on this part of the code recently |',
+        '| ✅ Availability | No open review requests right now |',
+        '| ⚪ Fairness | 19 reviews in the last 14 days |',
         '',
         '> [!NOTE]',
-        '> Test mode: no review was requested, and EthanHemo was not notified.',
+        '> **Test mode:** no review was requested, and EthanHemo was not notified.',
         '',
-        '[Open in Relay](http://localhost:5174/dashboard)',
+        '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>',
+        '<sub>[Open in Relay](http://localhost:5174/dashboard) · Commands: `@relay team` · `@relay skip` · `@relay help`</sub>',
       ].join('\n'),
     );
+    // Commands inside code spans mention nobody; an @ anywhere else would.
     const body = github.createIssueComment.mock.calls[0][2] as string;
-    expect(body).not.toContain('@');
+    expect(body.replace(/`[^`]*`/g, '')).not.toContain('@');
   });
 
   it('re-checks that Relay can write before each reply', async () => {
@@ -491,17 +498,18 @@ describe('RelayCommandService in test mode', () => {
 
 describe('RelayCommandService help', () => {
   const HELP = [
-    '#### Relay commands',
-    'Comment one of these on a pull request you opened:',
+    '### 📖 Relay commands',
     '',
-    '- `@relay`: Relay requests a reviewer who looks like a good fit, and explains why.',
-    '- `@relay team`: the same, but only from your team.',
-    '- `@relay skip`: Relay stays off this pull request.',
-    '- `@relay help`: this list.',
+    'Comment one of these on a pull request you opened.',
     '',
-    '<sub>Relay acts only on commands from the pull request author.</sub>',
+    '| Command | What it does |',
+    '|:--|:--|',
+    '| `@relay` | Requests a reviewer who looks like a good fit, and explains why |',
+    '| `@relay team` | The same, but only from your team |',
+    '| `@relay skip` | Keeps Relay off this pull request |',
+    '| `@relay help` | Shows this list |',
     '',
-    '[Open in Relay](http://localhost:5174/dashboard)',
+    '<sub>Relay acts only on commands from the pull request author · [Open in Relay](http://localhost:5174/dashboard)</sub>',
   ].join('\n');
 
   it('answers @relay help with the command list, also for someone other than the author', async () => {
@@ -522,8 +530,8 @@ describe('RelayCommandService help', () => {
       'org/app',
       7,
       HELP.replace(
-        '#### Relay commands\n',
-        "#### Relay commands\nRelay doesn't know that command yet.\n\n",
+        'Comment one of these',
+        "Relay doesn't know that command yet. Comment one of these",
       ),
     );
   });
@@ -585,7 +593,7 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
     });
     await service.processPending(NOW);
     expect(body(github)).toContain(
-      'Requested a review from @EthanHemo.\nFrom the **Platform** team.\n',
+      '### 👀 Relay requested a review from @EthanHemo\n\nFrom the **Platform** team.\n',
     );
   });
 
@@ -601,11 +609,41 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
     );
   });
 
+  it('the team and area lines sit together above the checks', async () => {
+    const { service, github } = liveSetup({
+      teamName: 'Platform',
+      teamLeadFallback: false,
+      area: 'Auth',
+      sensitivity: 4,
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      'From the **Platform** team.\nTouches **Auth** · Sensitivity ●●●●○ High\n\n| Check | Why EthanHemo? |',
+    );
+  });
+
+  it('a | in an area name does not break the table', async () => {
+    const { service, github } = liveSetup({
+      area: 'Auth | SSO',
+      reason: 'worked on Auth | SSO recently',
+      signals: {
+        areaRank: 1,
+        areaPool: 4,
+        openReviewRequests: 0,
+        reviewsLast14Days: 0,
+      },
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      '| ✅ Familiarity | Worked on Auth \\| SSO recently |',
+    );
+  });
+
   it("shows sensitivity with the app's five levels", async () => {
     const { service, github } = liveSetup({ area: 'Auth', sensitivity: 5 });
     await service.processPending(NOW);
     expect(body(github)).toContain(
-      'This pull request touches **Auth** · Sensitivity ●●●●● Critical',
+      'Touches **Auth** · Sensitivity ●●●●● Critical',
     );
   });
 
@@ -615,11 +653,9 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
       key === 'FRONTEND_ORIGIN' ? 'https://relay.internal.apono.io' : undefined,
     );
     await service.processPending(NOW);
-    expect(
-      body(github).endsWith(
-        '[Open in Relay](https://relay.internal.apono.io/dashboard)',
-      ),
-    ).toBe(true);
+    expect(body(github)).toContain(
+      '[Open in Relay](https://relay.internal.apono.io/dashboard)',
+    );
   });
 
   it('links to Relay at RELAY_URL', async () => {
@@ -628,11 +664,9 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
       key === 'RELAY_URL' ? 'https://relay.apono.io/' : undefined,
     );
     await service.processPending(NOW);
-    expect(
-      body(github).endsWith(
-        '[Open in Relay](https://relay.apono.io/dashboard)',
-      ),
-    ).toBe(true);
+    expect(body(github)).toContain(
+      '[Open in Relay](https://relay.apono.io/dashboard)',
+    );
   });
 });
 
