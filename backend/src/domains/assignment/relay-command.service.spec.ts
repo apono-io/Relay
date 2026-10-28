@@ -609,6 +609,19 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
     );
   });
 
+  it('falls back to FRONTEND_ORIGIN when RELAY_URL is not set', async () => {
+    const { service, github, configService } = liveSetup({});
+    configService.get.mockImplementation((key: string) =>
+      key === 'FRONTEND_ORIGIN' ? 'https://relay.internal.apono.io' : undefined,
+    );
+    await service.processPending(NOW);
+    expect(
+      body(github).endsWith(
+        '[Open in Relay](https://relay.internal.apono.io/dashboard)',
+      ),
+    ).toBe(true);
+  });
+
   it('links to Relay at RELAY_URL', async () => {
     const { service, github, configService } = liveSetup({});
     configService.get.mockImplementation((key: string) =>

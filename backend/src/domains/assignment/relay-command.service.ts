@@ -207,9 +207,12 @@ export class RelayCommandService {
     }
   }
 
+  // RELAY_URL, else the frontend origin a deployment already sets for CORS and login.
   private relayUrl(): string {
     return (
-      this.configService.get<string>('RELAY_URL') || DEFAULT_RELAY_URL
+      this.configService.get<string>('RELAY_URL') ||
+      this.configService.get<string>('FRONTEND_ORIGIN') ||
+      DEFAULT_RELAY_URL
     ).replace(/\/+$/, '');
   }
 
