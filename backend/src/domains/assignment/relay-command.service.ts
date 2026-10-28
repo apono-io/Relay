@@ -18,6 +18,7 @@ import {
   CandidateStatsService,
 } from './candidate-stats.service';
 import { AssignmentActionsService } from './assignment-actions.service';
+import { DEFAULT_RISK } from './assignment-engine';
 import { RelayAssignment } from './models/relay-assignment.model';
 
 export type CommandOutcome =
@@ -312,17 +313,21 @@ const SENSITIVITY_WORD: Record<number, string> = {
   5: 'Critical',
 };
 
-function areaLine(pick: PickedReviewer): string | null {
-  if (!pick.area) {
-    return null;
-  }
-  if (!pick.sensitivity) {
-    return `Touches **${pick.area}**`;
-  }
-  const level = Math.max(1, Math.min(5, Math.round(pick.sensitivity)));
+// Files outside every mapped area are weighed at the engine's default sensitivity,
+// so the reply shows that level rather than nothing.
+function areaLine(pick: PickedReviewer): string {
+  const level = Math.max(
+    1,
+    Math.min(5, Math.round(pick.sensitivity || DEFAULT_RISK)),
+  );
   const dots = '●'.repeat(level) + '○'.repeat(5 - level);
-  return `Touches **${pick.area}** · Sensitivity ${dots} ${SENSITIVITY_WORD[level]}`;
+  const where = pick.area ? `Touches **${pick.area}**` : 'No mapped area';
+  return `${where} · Sensitivity ${dots} ${SENSITIVITY_WORD[level]}`;
 }
+
+// "Platform" reads "the Platform team"; a name that already ends in "team" stays as named.
+const teamLabel = (name: string): string =>
+  /\bteam$/i.test(name.trim()) ? `**${name}**` : `the **${name}** team`;
 
 // Says why the lead was asked, truthfully: loaded teammates, or nobody else pickable.
 // In test mode nobody was asked, so it says "would ask".
@@ -331,7 +336,7 @@ function teamLine(pick: PickedReviewer, live: boolean): string | null {
     return null;
   }
   if (!pick.teamLeadFallback) {
-    return `From the **${pick.teamName}** team.`;
+    return `From ${teamLabel(pick.teamName)}.`;
   }
   const asked = live ? 'asked' : 'would ask';
   return pick.teamLeadReason === 'unavailable'

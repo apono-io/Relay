@@ -359,6 +359,7 @@ describe('RelayCommandService reply explains the pick', () => {
     await service.processPending(NOW);
     const body = github.createIssueComment.mock.calls[0][2] as string;
     expect(body).not.toContain('Touches');
+    expect(body).toContain('No mapped area · Sensitivity ●●○○○ Normal');
     expect(body).toContain(
       '| ⚪ Familiarity | No recent work on this part of the code |',
     );
@@ -466,6 +467,8 @@ describe('RelayCommandService in test mode', () => {
       7,
       [
         '### 👀 Relay would request a review from EthanHemo',
+        '',
+        'No mapped area · Sensitivity ●●○○○ Normal',
         '',
         '| Check | Why EthanHemo? |',
         '|:--|:--|',
@@ -620,6 +623,16 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
     expect(body(github)).toContain(
       'From the **Platform** team.\nTouches **Auth** · Sensitivity ●●●●○ High\n\n| Check | Why EthanHemo? |',
     );
+  });
+
+  it("doesn't say team twice when the name already ends in team", async () => {
+    const { service, github } = liveSetup({
+      teamName: 'Access-Management team',
+      teamLeadFallback: false,
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain('From **Access-Management team**.\n');
+    expect(body(github)).not.toContain('team** team');
   });
 
   it('a | in an area name does not break the table', async () => {
