@@ -35,14 +35,30 @@ function fakeRepo(key: string) {
       rows = rows.filter((row) => !matches(row, where));
       return { affected: before - rows.length };
     }),
+    upsert: jest.fn(async (values: Row[]) => {
+      for (const value of values) {
+        rows = rows
+          .filter((row) => row[key] !== value[key])
+          .concat({ ...value });
+      }
+    }),
   };
 }
 
 function setup() {
   const teams = fakeRepo('id');
   const members = fakeRepo('personId');
+  // Both repositories share a manager whose transaction hands back the same fakes.
+  const manager: Record<string, any> = {};
+  manager.getRepository = (entity: { name: string }) =>
+    entity.name === 'Team' ? teams : members;
+  manager.transaction = jest.fn(async (work: (m: unknown) => unknown) =>
+    work(manager),
+  );
+  Object.assign(teams, { manager });
+  Object.assign(members, { manager });
   const service = new TeamsService(teams as never, members as never);
-  return { service, teams, members };
+  return { service, teams, members, manager };
 }
 
 describe('TeamsService', () => {
@@ -137,5 +153,31 @@ describe('TeamsService', () => {
     await service.setMembers(a.id, ['p1']);
     await expect(service.remove(a.id)).resolves.toBe(true);
     expect(await service.teamOf('p1')).toBeNull();
+  });
+
+  it("adding another team's lead as a member moves them out of that lead role", async () => {
+    const { service } = setup();
+    const a = await service.create('A');
+    const b = await service.create('B');
+    await service.update(a.id, { leadPersonId: 'p1' });
+    const { moved } = await service.setMembers(b.id, ['p1']);
+    expect(moved).toEqual(['p1']);
+    const [listedA] = (await service.list()).filter((t) => t.id === a.id);
+    expect(listedA.leadPersonId).toBeNull();
+    expect((await service.teamOf('p1'))?.name).toBe('B');
+  });
+
+  it('changes members in one transaction', async () => {
+    const { service, manager } = setup();
+    const a = await service.create('A');
+    await service.setMembers(a.id, ['p1', 'p2']);
+    expect(manager.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('changes the lead in one transaction', async () => {
+    const { service, manager } = setup();
+    const a = await service.create('A');
+    await service.update(a.id, { leadPersonId: 'p1' });
+    expect(manager.transaction).toHaveBeenCalledTimes(1);
   });
 });

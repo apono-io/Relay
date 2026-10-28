@@ -74,24 +74,32 @@ export class TeamsService {
       }
       team.leadThreshold = threshold;
     }
-    if (patch.leadPersonId !== undefined) {
-      const leadPersonId = patch.leadPersonId || null;
-      if (leadPersonId) {
-        const leading = await this.teamRepo.findOne({
-          where: { leadPersonId },
-        });
-        if (leading && leading.id !== id) {
-          throw new BadRequestException(
-            `That person already leads ${leading.name}. A person leads one team at most.`,
-          );
-        }
-        // One team per person: a lead is never also a member of any team.
-        await this.memberRepo.delete({ personId: leadPersonId });
+    const leadPersonId =
+      patch.leadPersonId === undefined ? undefined : patch.leadPersonId || null;
+    if (leadPersonId) {
+      const leading = await this.teamRepo.findOne({
+        where: { leadPersonId },
+      });
+      if (leading && leading.id !== id) {
+        throw new BadRequestException(
+          `That person already leads ${leading.name}. A person leads one team at most.`,
+        );
       }
-      team.leadPersonId = leadPersonId;
     }
-    const saved = await this.teamRepo.save(team);
-    return this.view(saved, await this.memberRepo.find());
+    // The lead change and leaving any membership commit together or not at all.
+    return this.teamRepo.manager.transaction(async (manager) => {
+      const teams = manager.getRepository(Team);
+      const members = manager.getRepository(TeamMember);
+      if (leadPersonId !== undefined) {
+        if (leadPersonId) {
+          // One team per person: a lead is never also a member of any team.
+          await members.delete({ personId: leadPersonId });
+        }
+        team.leadPersonId = leadPersonId;
+      }
+      const saved = await teams.save(team);
+      return this.view(saved, await members.find());
+    });
   }
 
   async remove(id: string): Promise<boolean> {
@@ -109,15 +117,41 @@ export class TeamsService {
     const wanted = [...new Set(personIds)].filter(
       (personId) => personId !== team.leadPersonId,
     );
-    const existing = await this.memberRepo.find();
-    const moved = existing
-      .filter((row) => row.teamId !== teamId && wanted.includes(row.personId))
-      .map((row) => row.personId);
-    await this.memberRepo.delete({ teamId });
-    for (const personId of wanted) {
-      await this.memberRepo.save(this.memberRepo.create({ personId, teamId }));
-    }
-    return { team: this.view(team, await this.memberRepo.find()), moved };
+    // Replacing the list, moving people from other teams and freeing other teams' lead
+    // slots happen in one transaction, so a failure never leaves a team half-emptied.
+    return this.teamRepo.manager.transaction(async (manager) => {
+      const teams = manager.getRepository(Team);
+      const members = manager.getRepository(TeamMember);
+      const existing = await members.find();
+      const movedFromMembership = existing
+        .filter((row) => row.teamId !== teamId && wanted.includes(row.personId))
+        .map((row) => row.personId);
+      // One team per person also covers leads: leading elsewhere ends when joining here.
+      const leadingElsewhere = (await teams.find()).filter(
+        (other) =>
+          other.id !== teamId &&
+          other.leadPersonId !== null &&
+          wanted.includes(other.leadPersonId),
+      );
+      const formerLeads = leadingElsewhere.map(
+        (other) => other.leadPersonId as string,
+      );
+      for (const other of leadingElsewhere) {
+        other.leadPersonId = null;
+        await teams.save(other);
+      }
+      await members.delete({ teamId });
+      if (wanted.length > 0) {
+        await members.upsert(
+          wanted.map((personId) => ({ personId, teamId })),
+          ['personId'],
+        );
+      }
+      return {
+        team: this.view(team, await members.find()),
+        moved: [...new Set([...movedFromMembership, ...formerLeads])],
+      };
+    });
   }
 
   // A person's team: the one they belong to, else the one they lead.
