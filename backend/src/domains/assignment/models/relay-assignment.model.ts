@@ -32,6 +32,18 @@ export class RelayAssignment {
 
   @Field(() => PickSignals, { nullable: true })
   signals?: PickSignals | null;
+
+  @Field(() => Int, { nullable: true })
+  sensitivity?: number | null;
+
+  @Field(() => String, { nullable: true })
+  teamName?: string | null;
+
+  @Field(() => Boolean, { nullable: true })
+  teamLeadFallback?: boolean | null;
+
+  @Field(() => Int, { nullable: true })
+  teamLeadThreshold?: number | null;
 }
 
 @ObjectType()

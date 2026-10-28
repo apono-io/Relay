@@ -133,6 +133,7 @@ function setup() {
   };
   const configService = { get: jest.fn() };
   const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+  const teams = { teamOf: jest.fn().mockResolvedValue(null) };
   const service = new AssignmentActionsService(
     suggestionRepo as never,
     prRepo as never,
@@ -142,8 +143,10 @@ function setup() {
     github as never,
     configService as never,
     logger as never,
+    teams as never,
   );
   return {
+    teams,
     service,
     suggestionRepo,
     suggestionQb,
@@ -312,6 +315,88 @@ describe('AssignmentActionsService.assign claim', () => {
       'turned off',
     );
     expect(suggestionRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+});
+
+describe('AssignmentActionsService.assign within a team', () => {
+  const team = (overrides: Record<string, unknown> = {}) => ({
+    id: 't1',
+    name: 'Platform',
+    leadPersonId: null,
+    leadThreshold: 2,
+    memberIds: ['p-second'],
+    ...overrides,
+  });
+
+  it("team scope picks only from the author's team", async () => {
+    const { service, prRepo, teams } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    teams.teamOf.mockResolvedValue(team());
+    const result = await service.assign(
+      'org/app',
+      11405,
+      'p-author',
+      'comment',
+      'team',
+    );
+    expect(teams.teamOf).toHaveBeenCalledWith('p-author');
+    expect(result.login).toBe('second');
+    expect(result.teamName).toBe('Platform');
+    expect(result.teamLeadFallback).toBe(false);
+  });
+
+  it('refuses @relay team when the author has no team', async () => {
+    const { service, prRepo } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    await expect(
+      service.assign('org/app', 11405, 'p-author', 'comment', 'team'),
+    ).rejects.toThrow("isn't on a team in Relay yet");
+  });
+
+  it('refuses when nobody on the team can take it', async () => {
+    const { service, prRepo, teams } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    teams.teamOf.mockResolvedValue(team({ memberIds: [] }));
+    await expect(
+      service.assign('org/app', 11405, 'p-author', 'comment', 'team'),
+    ).rejects.toThrow('Nobody on Platform can take this review right now.');
+  });
+
+  it('reports the team and a lead fallback on the result', async () => {
+    const { service, prRepo, teams } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    teams.teamOf.mockResolvedValue(
+      team({ memberIds: ['p-swamped'], leadPersonId: 'p-expert' }),
+    );
+    const result = await service.assign(
+      'org/app',
+      11405,
+      'p-author',
+      'comment',
+      'team',
+    );
+    expect(result).toMatchObject({
+      login: 'expert',
+      teamName: 'Platform',
+      teamLeadFallback: true,
+      teamLeadThreshold: 2,
+    });
+  });
+
+  it('org scope ignores teams', async () => {
+    const { service, prRepo, teams } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    teams.teamOf.mockResolvedValue(team());
+    const result = await service.assign('org/app', 11405, 'p-author');
+    expect(teams.teamOf).not.toHaveBeenCalled();
+    expect(result.teamName).toBeNull();
+  });
+
+  it("returns the area's sensitivity", async () => {
+    const { service, prRepo } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    const result = await service.assign('org/app', 11405, 'p-author');
+    expect(result.sensitivity).toBe(2);
   });
 });
 

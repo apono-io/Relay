@@ -22,8 +22,11 @@ import {
 } from './candidate-stats.service';
 import { AppSettingsService } from './app-settings.service';
 import { RelayAssignment } from './models/relay-assignment.model';
+import { pickWithinTeam } from './team-assignment';
+import { TeamsService, TeamView } from '@/domains/teams/teams.service';
 
 export type AssignTrigger = 'manual' | 'auto' | 'comment';
+export type AssignScope = 'org' | 'team';
 
 @Injectable()
 export class AssignmentActionsService {
@@ -39,6 +42,7 @@ export class AssignmentActionsService {
     private readonly github: GitHubClient,
     private readonly configService: ConfigService,
     private readonly logger: LoggerService,
+    private readonly teams: TeamsService,
   ) {}
 
   async assign(
@@ -46,13 +50,21 @@ export class AssignmentActionsService {
     number: number,
     byPersonId: string | null,
     trigger: AssignTrigger = 'manual',
+    scope: AssignScope = 'org',
   ): Promise<RelayAssignment> {
     const pr = await this.prRepo.findOne({ where: { repo, number } });
     if (!pr) {
       throw new NotFoundException(`Relay does not know ${repo}#${number}.`);
     }
     const stats = await this.candidateStats.build();
-    return this.assignWithStats(pr, stats, byPersonId, trigger, new Date());
+    return this.assignWithStats(
+      pr,
+      stats,
+      byPersonId,
+      trigger,
+      new Date(),
+      scope,
+    );
   }
 
   async autoAssign(now: Date = new Date()): Promise<number> {
@@ -173,6 +185,7 @@ export class AssignmentActionsService {
     byPersonId: string | null,
     trigger: AssignTrigger,
     now: Date,
+    scope: AssignScope = 'org',
   ): Promise<RelayAssignment> {
     if (pr.state !== PrState.OPEN) {
       throw new BadRequestException('This pull request is no longer open.');
@@ -203,18 +216,32 @@ export class AssignmentActionsService {
     const rules = stats.rulesByRepo[pr.repo] ?? [];
     const area = AssignmentEngine.classify(pr.filePaths, rules);
     const author = stats.personByLogin.get(pr.authorLogin.toLowerCase());
-    const result = AssignmentEngine.rank({
+    const rankInput = {
       authorPersonId: author?.personId ?? null,
       authorLogin: pr.authorLogin,
       requestedReviewers: pr.requestedReviewers,
       area,
       candidates: stats.candidates,
       config: DEFAULT_ENGINE_CONFIG,
-    });
+    };
+    let team: TeamView | null = null;
+    let leadFallback = false;
+    let result = AssignmentEngine.rank(rankInput);
+    if (scope === 'team') {
+      team = author ? await this.teams.teamOf(author.personId) : null;
+      if (!team) {
+        throw new BadRequestException(
+          "The author isn't on a team in Relay yet — an admin adds people to teams in System settings → Teams.",
+        );
+      }
+      ({ result, leadFallback } = pickWithinTeam(rankInput, team));
+    }
     const pick = result.picks[0];
     if (!pick) {
       throw new BadRequestException(
-        'No eligible reviewer right now — everyone is filtered out for this pull request.',
+        team
+          ? `Nobody on ${team.name} can take this review right now.`
+          : 'No eligible reviewer right now — everyone is filtered out for this pull request.',
       );
     }
 
@@ -290,6 +317,10 @@ export class AssignmentActionsService {
       area: area.area,
       reason: pick.reason,
       signals: pick.signals ?? null,
+      sensitivity: area.area ? area.risk : null,
+      teamName: team?.name ?? null,
+      teamLeadFallback: team ? leadFallback : null,
+      teamLeadThreshold: team?.leadThreshold ?? null,
     };
   }
 

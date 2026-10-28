@@ -6,6 +6,7 @@ import { PullRequest } from '@/domains/pull-requests/entities/pull-request.entit
 import { PrEvent } from '@/domains/pull-requests/entities/pr-event.entity';
 import { AreaRule } from '@/domains/repos/entities/area-rule.entity';
 import { PeopleModule } from '@/domains/people/people.module';
+import { TeamsModule } from '@/domains/teams/teams.module';
 import { CandidateStatsService } from './candidate-stats.service';
 import { SuggestionService } from './suggestion.service';
 import { AssignmentActionsService } from './assignment-actions.service';
@@ -24,6 +25,7 @@ import { RelayCommandService } from './relay-command.service';
       AreaRule,
     ]),
     PeopleModule,
+    TeamsModule,
   ],
   providers: [
     CandidateStatsService,
