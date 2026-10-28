@@ -29,6 +29,9 @@ import { AppSetting } from './domains/assignment/entities/app-setting.entity';
 import { PersonSettings } from './domains/people/entities/person-settings.entity';
 import { ReposModule } from './domains/repos/repos.module';
 import { AssignmentModule } from './domains/assignment/assignment.module';
+import { TeamsModule } from './domains/teams/teams.module';
+import { Team } from './domains/teams/entities/team.entity';
+import { TeamMember } from './domains/teams/entities/team-member.entity';
 
 @Module({
   imports: [
@@ -46,6 +49,8 @@ import { AssignmentModule } from './domains/assignment/assignment.module';
         AreaRule,
         Suggestion,
         AppSetting,
+        Team,
+        TeamMember,
       ],
       migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
       synchronize: false,
@@ -73,6 +78,7 @@ import { AssignmentModule } from './domains/assignment/assignment.module';
     IngestionModule,
     ReposModule,
     AssignmentModule,
+    TeamsModule,
     MetricsModule,
     SchedulerModule,
   ],
