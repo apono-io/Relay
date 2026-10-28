@@ -135,3 +135,58 @@ export const ASSIGNMENT_COMPARISON_QUERY = gql`
     }
   }
 `;
+
+const TEAM_FIELDS = gql`
+  fragment TeamFields on Team {
+    id
+    name
+    leadPersonId
+    leadThreshold
+    memberIds
+  }
+`;
+
+export const TEAMS_QUERY = gql`
+  ${TEAM_FIELDS}
+  query Teams {
+    teams {
+      ...TeamFields
+    }
+  }
+`;
+
+export const CREATE_TEAM = gql`
+  ${TEAM_FIELDS}
+  mutation CreateTeam($name: String!) {
+    createTeam(name: $name) {
+      ...TeamFields
+    }
+  }
+`;
+
+export const UPDATE_TEAM = gql`
+  ${TEAM_FIELDS}
+  mutation UpdateTeam($id: ID!, $input: UpdateTeamInput!) {
+    updateTeam(id: $id, input: $input) {
+      ...TeamFields
+    }
+  }
+`;
+
+export const DELETE_TEAM = gql`
+  mutation DeleteTeam($id: ID!) {
+    deleteTeam(id: $id)
+  }
+`;
+
+export const SET_TEAM_MEMBERS = gql`
+  ${TEAM_FIELDS}
+  mutation SetTeamMembers($teamId: ID!, $personIds: [ID!]!) {
+    setTeamMembers(teamId: $teamId, personIds: $personIds) {
+      team {
+        ...TeamFields
+      }
+      movedPersonIds
+    }
+  }
+`;

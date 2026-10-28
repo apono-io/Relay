@@ -5,6 +5,7 @@ import { StatusStrip } from '@/components/dashboard/StatusStrip';
 import { PeopleSettings } from '@/components/people/PeopleSettings';
 import { RepositoriesSettings } from '@/components/system/RepositoriesSettings';
 import { AreaRulesSettings } from '@/components/system/AreaRulesSettings';
+import { TeamsSettings } from '@/components/system/TeamsSettings';
 import { AssignmentQuietPhase } from '@/components/system/AssignmentQuietPhase';
 import { EnginePerformance } from '@/components/system/EnginePerformance';
 import { AssignmentControls } from '@/components/system/AssignmentControls';
@@ -26,6 +27,7 @@ export function SystemSettingsPage() {
       ? [
           { value: 'repositories', label: 'Repositories' },
           { value: 'areas', label: 'Code areas' },
+          { value: 'teams', label: 'Teams' },
           { value: 'engine', label: 'Assignment engine' },
         ]
       : []),
@@ -46,6 +48,7 @@ export function SystemSettingsPage() {
             {tab === 'people' && <PeopleSettings />}
             {tab === 'repositories' && <RepositoriesSettings />}
             {tab === 'areas' && <AreaRulesSettings />}
+            {tab === 'teams' && <TeamsSettings />}
             {tab === 'engine' && (
               <Stack spacing={3}>
                 <AssignmentControls />
