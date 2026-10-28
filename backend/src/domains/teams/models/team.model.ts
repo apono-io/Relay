@@ -1,4 +1,13 @@
 import { Field, ID, InputType, Int, ObjectType } from '@nestjs/graphql';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 @ObjectType('Team')
 export class TeamModel {
@@ -27,14 +36,25 @@ export class TeamMembersResult {
   movedPersonIds: string[];
 }
 
+// Every field carries a validator: the global ValidationPipe (whitelist) strips any
+// field without one, which would silently drop the update.
 @InputType()
 export class UpdateTeamInput {
   @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
   name?: string;
 
   @Field(() => ID, { nullable: true })
+  @IsOptional()
+  @IsUUID()
   leadPersonId?: string | null;
 
   @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
   leadThreshold?: number;
 }
