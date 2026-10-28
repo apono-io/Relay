@@ -51,12 +51,12 @@ type ExternalIdInput =
       occurredAt: Date;
     };
 
-export type RelayCommand = 'assign' | 'skip' | 'help' | 'unknown';
+export type RelayCommand = 'assign' | 'team' | 'skip' | 'help' | 'unknown';
 
 // `@relay` (or `/relay`) at the start of a line, then the command word; a bare `@relay`
-// asks for help, any other word is an unknown command.
+// means assign, any other word is an unknown command.
 const COMMAND_LINE = /^[@/]relay(?=\s|$)\s*(\S*)/i;
-const KNOWN_COMMAND = /^(assign|skip|help)\b/i;
+const KNOWN_COMMAND = /^(assign|team|skip|help)\b/i;
 const FENCE_LINE = /^(```|~~~)/;
 
 export function parseRelayCommand(
@@ -72,7 +72,7 @@ export function parseRelayCommand(
     const match = inFence ? null : COMMAND_LINE.exec(line);
     if (match) {
       if (!match[1]) {
-        return 'help';
+        return 'assign';
       }
       const known = KNOWN_COMMAND.exec(match[1]);
       return known ? (known[1].toLowerCase() as RelayCommand) : 'unknown';

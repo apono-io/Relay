@@ -47,7 +47,15 @@ const UNKNOWN_ACCOUNT_REASON =
 type CommandResult = { outcome: CommandOutcome; reason?: string };
 type PickedReviewer = Pick<
   RelayAssignment,
-  'login' | 'area' | 'reason' | 'shadow' | 'signals'
+  | 'login'
+  | 'area'
+  | 'reason'
+  | 'shadow'
+  | 'signals'
+  | 'sensitivity'
+  | 'teamName'
+  | 'teamLeadFallback'
+  | 'teamLeadThreshold'
 >;
 type HandledCommand = CommandResult & {
   pick?: PickedReviewer;
@@ -160,6 +168,7 @@ export class RelayCommandService {
         pr.number,
         author.personId,
         'comment',
+        command === 'team' ? 'team' : 'org',
       );
       return { outcome: 'assigned', pick: assignment };
     } catch (error) {
@@ -182,7 +191,7 @@ export class RelayCommandService {
     pick: PickedReviewer | undefined,
     unknownCommand = false,
   ): Promise<void> {
-    const body = replyText(result, pick, unknownCommand);
+    const body = replyText(result, pick, unknownCommand, this.relayUrl());
     if (!body) {
       return;
     }
@@ -195,6 +204,12 @@ export class RelayCommandService {
         RelayCommandService.name,
       );
     }
+  }
+
+  private relayUrl(): string {
+    return (
+      this.configService.get<string>('RELAY_URL') || DEFAULT_RELAY_URL
+    ).replace(/\/+$/, '');
   }
 
   private async claim(eventId: string, now: Date): Promise<boolean> {
@@ -279,13 +294,50 @@ function whyLines(pick: PickedReviewer): WhyLine[] {
   ];
 }
 
+const DEFAULT_RELAY_URL = 'http://localhost:5174';
+
 const FAIRNESS_NOTE =
   '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>';
 
 // In test mode (shadow) the reviewer is named in bold, not @-mentioned, so they get
 // no notification, and a note says no review was requested.
-function assignedReply(pick: PickedReviewer): string {
+// The app's five sensitivity levels (frontend SensitivityDots).
+const SENSITIVITY_WORD: Record<number, string> = {
+  1: 'Low',
+  2: 'Normal',
+  3: 'Elevated',
+  4: 'High',
+  5: 'Critical',
+};
+
+function areaLine(pick: PickedReviewer): string | null {
+  if (!pick.area) {
+    return null;
+  }
+  if (!pick.sensitivity) {
+    return `This pull request touches **${pick.area}**.`;
+  }
+  const level = Math.max(1, Math.min(5, Math.round(pick.sensitivity)));
+  const dots = '●'.repeat(level) + '○'.repeat(5 - level);
+  return `This pull request touches **${pick.area}** · Sensitivity ${dots} ${SENSITIVITY_WORD[level]}`;
+}
+
+function teamLine(pick: PickedReviewer): string | null {
+  if (!pick.teamName) {
+    return null;
+  }
+  return pick.teamLeadFallback
+    ? `Everyone else on **${pick.teamName}** already has ${pick.teamLeadThreshold} or more open reviews, so Relay asked the team lead.`
+    : `From the **${pick.teamName}** team.`;
+}
+
+const relayLink = (relayUrl: string): string =>
+  `[Open in Relay](${relayUrl}/dashboard)`;
+
+function assignedReply(pick: PickedReviewer, relayUrl: string): string {
   const live = pick.shadow === false;
+  const area = areaLine(pick);
+  const team = teamLine(pick);
   // GitHub comments break lines on every newline, so each check sits on its own line.
   const lines = whyLines(pick).map((line) => {
     const mark = line.counted ? '✅' : '⚪';
@@ -296,9 +348,10 @@ function assignedReply(pick: PickedReviewer): string {
     live
       ? `Requested a review from @${pick.login}.`
       : `Relay would request a review from **${pick.login}**.`,
+    ...(team ? [team] : []),
     '',
     `#### Why ${pick.login}?`,
-    ...(pick.area ? [`This pull request touches **${pick.area}**.`, ''] : []),
+    ...(area ? [area, ''] : []),
     ...lines,
     '',
     FAIRNESS_NOTE,
@@ -309,37 +362,43 @@ function assignedReply(pick: PickedReviewer): string {
           '> [!NOTE]',
           `> Test mode: no review was requested, and ${pick.login} was not notified.`,
         ]),
+    '',
+    relayLink(relayUrl),
   ].join('\n');
 }
 
-function helpReply(unknownCommand: boolean): string {
+function helpReply(unknownCommand: boolean, relayUrl: string): string {
   return [
     '#### Relay commands',
     ...(unknownCommand ? ["Relay doesn't know that command yet.", ''] : []),
     'Comment one of these on a pull request you opened:',
     '',
-    '- `@relay assign`: Relay requests a reviewer who looks like a good fit, and explains why.',
+    '- `@relay`: Relay requests a reviewer who looks like a good fit, and explains why.',
+    '- `@relay team`: the same, but only from your team.',
     '- `@relay skip`: Relay stays off this pull request.',
     '- `@relay help`: this list.',
     '',
     '<sub>Relay acts only on commands from the pull request author.</sub>',
+    '',
+    relayLink(relayUrl),
   ].join('\n');
 }
 
 function replyText(
   result: CommandResult,
   pick: PickedReviewer | undefined,
-  unknownCommand = false,
+  unknownCommand: boolean,
+  relayUrl: string,
 ): string | null {
   switch (result.outcome) {
     case 'assigned':
-      return pick ? assignedReply(pick) : null;
+      return pick ? assignedReply(pick, relayUrl) : null;
     case 'skipped':
       return "#### Relay will stay off this pull request\nGot it. Relay won't pick a reviewer here.";
     case 'refused':
       return `#### No reviewer picked\n${result.reason}`;
     case 'answered':
-      return helpReply(unknownCommand);
+      return helpReply(unknownCommand, relayUrl);
     case 'not-author':
     case 'ignored':
       return null;

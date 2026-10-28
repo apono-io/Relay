@@ -227,7 +227,11 @@ describe('GithubEventNormalizer', () => {
       ['@relay help', 'help'],
       ['@Relay HELP me', 'help'],
       ['/relay help', 'help'],
-      ['@relay', 'help'],
+      ['@relay', 'assign'],
+      ['@relay team', 'team'],
+      ['/relay team', 'team'],
+      ["don't @relay team", null],
+      ['@relay teammate', 'unknown'],
       ["don't @relay help", null],
       [null, null],
     ])('parses %j as %j', (body, expected) => {

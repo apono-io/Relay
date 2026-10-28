@@ -24,7 +24,7 @@ function chainableQb() {
 }
 
 function commandEvent(
-  command: 'assign' | 'skip' | 'help' | 'unknown',
+  command: 'assign' | 'team' | 'skip' | 'help' | 'unknown',
   actorLogin = 'author',
   overrides: Record<string, unknown> = {},
 ) {
@@ -98,7 +98,15 @@ function setup(events: unknown[] = [], candidates: unknown[] = []) {
     configService as never,
     logger as never,
   );
-  return { service, qb, actions, logger, candidateStats, github };
+  return {
+    service,
+    qb,
+    actions,
+    logger,
+    candidateStats,
+    github,
+    configService,
+  };
 }
 
 function outcomePatches(qb: Record<string, jest.Mock>) {
@@ -116,6 +124,7 @@ describe('RelayCommandService.processPending', () => {
       7,
       'p-author',
       'comment',
+      'org',
     );
     expect(summary).toEqual({
       assigned: 1,
@@ -299,6 +308,7 @@ describe('RelayCommandService reply explains the pick', () => {
     const { service, github } = liveSetup({
       login: 'EthanHemo',
       area: 'Frontend',
+      sensitivity: 2,
       reason: 'worked on Frontend recently and has no open reviews',
       signals: {
         areaRank: 2,
@@ -315,13 +325,15 @@ describe('RelayCommandService reply explains the pick', () => {
         'Requested a review from @EthanHemo.',
         '',
         '#### Why EthanHemo?',
-        'This pull request touches **Frontend**.',
+        'This pull request touches **Frontend** · Sensitivity ●●○○○ Normal',
         '',
         '✅ **Familiarity:** worked on Frontend recently',
         '✅ **Availability:** no open review requests right now',
         '⚪ **Fairness:** 19 reviews in the last 14 days',
         '',
         '<sub>Relay weighs recent work on this code, current review load, and reviews done in the last 14 days. Everyone gets the same three checks.</sub>',
+        '',
+        '[Open in Relay](http://localhost:5174/dashboard)',
       ].join('\n'),
     );
   });
@@ -458,6 +470,8 @@ describe('RelayCommandService in test mode', () => {
         '',
         '> [!NOTE]',
         '> Test mode: no review was requested, and EthanHemo was not notified.',
+        '',
+        '[Open in Relay](http://localhost:5174/dashboard)',
       ].join('\n'),
     );
     const body = github.createIssueComment.mock.calls[0][2] as string;
@@ -480,11 +494,14 @@ describe('RelayCommandService help', () => {
     '#### Relay commands',
     'Comment one of these on a pull request you opened:',
     '',
-    '- `@relay assign`: Relay requests a reviewer who looks like a good fit, and explains why.',
+    '- `@relay`: Relay requests a reviewer who looks like a good fit, and explains why.',
+    '- `@relay team`: the same, but only from your team.',
     '- `@relay skip`: Relay stays off this pull request.',
     '- `@relay help`: this list.',
     '',
     '<sub>Relay acts only on commands from the pull request author.</sub>',
+    '',
+    '[Open in Relay](http://localhost:5174/dashboard)',
   ].join('\n');
 
   it('answers @relay help with the command list, also for someone other than the author', async () => {
@@ -516,5 +533,92 @@ describe('RelayCommandService help', () => {
     const summary = await service.processPending(NOW);
     expect(summary.notAuthor).toBe(1);
     expect(github.createIssueComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('RelayCommandService teams, sensitivity and the Relay link', () => {
+  function liveSetup(
+    assignment: Record<string, unknown>,
+    command: 'assign' | 'team' = 'team',
+  ) {
+    const ctx = setup([commandEvent(command)]);
+    ctx.actions.assign.mockResolvedValue({
+      shadow: false,
+      login: 'EthanHemo',
+      area: null,
+      reason: 'has no open reviews',
+      ...assignment,
+    });
+    return ctx;
+  }
+  const body = (github: { createIssueComment: jest.Mock }) =>
+    github.createIssueComment.mock.calls[0][2] as string;
+
+  it('@relay team runs a team-scoped assign', async () => {
+    const { service, actions } = liveSetup({ teamName: 'Platform' });
+    await service.processPending(NOW);
+    expect(actions.assign).toHaveBeenCalledWith(
+      'org/app',
+      7,
+      'p-author',
+      'comment',
+      'team',
+    );
+  });
+
+  it('a bare or plain assign stays org-wide', async () => {
+    const { service, actions } = liveSetup({}, 'assign');
+    await service.processPending(NOW);
+    expect(actions.assign).toHaveBeenCalledWith(
+      'org/app',
+      7,
+      'p-author',
+      'comment',
+      'org',
+    );
+  });
+
+  it('the reply names the team', async () => {
+    const { service, github } = liveSetup({
+      teamName: 'Platform',
+      teamLeadFallback: false,
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      'Requested a review from @EthanHemo.\nFrom the **Platform** team.\n',
+    );
+  });
+
+  it('the reply explains a lead fallback', async () => {
+    const { service, github } = liveSetup({
+      teamName: 'Platform',
+      teamLeadFallback: true,
+      teamLeadThreshold: 2,
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      'Everyone else on **Platform** already has 2 or more open reviews, so Relay asked the team lead.',
+    );
+  });
+
+  it("shows sensitivity with the app's five levels", async () => {
+    const { service, github } = liveSetup({ area: 'Auth', sensitivity: 5 });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      'This pull request touches **Auth** · Sensitivity ●●●●● Critical',
+    );
+  });
+
+  it('links to Relay at RELAY_URL', async () => {
+    const { service, github, configService } = liveSetup({});
+    configService.get.mockImplementation((key: string) =>
+      key === 'RELAY_URL' ? 'https://relay.apono.io/' : undefined,
+    );
+    await service.processPending(NOW);
+    expect(
+      body(github).endsWith(
+        '[Open in Relay](https://relay.apono.io/dashboard)',
+      ),
+    ).toBe(true);
   });
 });
