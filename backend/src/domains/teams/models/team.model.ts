@@ -1,13 +1,5 @@
-import { Field, ID, InputType, Int, ObjectType } from '@nestjs/graphql';
-import {
-  IsInt,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  MaxLength,
-  Min,
-} from 'class-validator';
+import { Field, ID, InputType, ObjectType } from '@nestjs/graphql';
+import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 @ObjectType('Team')
 export class TeamModel {
@@ -19,9 +11,6 @@ export class TeamModel {
 
   @Field(() => ID, { nullable: true })
   leadPersonId: string | null;
-
-  @Field(() => Int)
-  leadThreshold: number;
 
   @Field(() => [ID])
   memberIds: string[];
@@ -50,11 +39,4 @@ export class UpdateTeamInput {
   @IsOptional()
   @IsUUID()
   leadPersonId?: string | null;
-
-  @Field(() => Int, { nullable: true })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(20)
-  leadThreshold?: number;
 }

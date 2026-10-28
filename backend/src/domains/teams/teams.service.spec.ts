@@ -62,13 +62,13 @@ function setup() {
 }
 
 describe('TeamsService', () => {
-  it('creates a team with threshold 2 and no lead', async () => {
+  it('creates a team with no lead and no threshold of its own', async () => {
     const { service } = setup();
     const team = await service.create('  Platform ');
-    expect(team).toMatchObject({
+    expect(team).toEqual({
+      id: expect.any(String),
       name: 'Platform',
       leadPersonId: null,
-      leadThreshold: 2,
       memberIds: [],
     });
   });
@@ -79,20 +79,6 @@ describe('TeamsService', () => {
     await expect(service.create('Platform')).rejects.toThrow(
       BadRequestException,
     );
-  });
-
-  it('rejects a threshold outside 1..20', async () => {
-    const { service } = setup();
-    const team = await service.create('Platform');
-    await expect(service.update(team.id, { leadThreshold: 0 })).rejects.toThrow(
-      BadRequestException,
-    );
-    await expect(
-      service.update(team.id, { leadThreshold: 21 }),
-    ).rejects.toThrow(BadRequestException);
-    await expect(
-      service.update(team.id, { leadThreshold: 1.5 }),
-    ).rejects.toThrow(BadRequestException);
   });
 
   it('moves a person who joins another team', async () => {

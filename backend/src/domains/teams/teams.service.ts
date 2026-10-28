@@ -12,12 +12,8 @@ export type TeamView = {
   id: string;
   name: string;
   leadPersonId: string | null;
-  leadThreshold: number;
   memberIds: string[];
 };
-
-const MIN_THRESHOLD = 1;
-const MAX_THRESHOLD = 20;
 
 @Injectable()
 export class TeamsService {
@@ -43,7 +39,6 @@ export class TeamsService {
       this.teamRepo.create({
         name: trimmed,
         leadPersonId: null,
-        leadThreshold: 2,
       }),
     );
     return this.view(team, []);
@@ -54,25 +49,11 @@ export class TeamsService {
     patch: {
       name?: string;
       leadPersonId?: string | null;
-      leadThreshold?: number;
     },
   ): Promise<TeamView> {
     const team = await this.mustFind(id);
     if (patch.name !== undefined) {
       team.name = await this.validName(patch.name, id);
-    }
-    if (patch.leadThreshold !== undefined) {
-      const threshold = patch.leadThreshold;
-      if (
-        !Number.isInteger(threshold) ||
-        threshold < MIN_THRESHOLD ||
-        threshold > MAX_THRESHOLD
-      ) {
-        throw new BadRequestException(
-          `The lead threshold is a whole number from ${MIN_THRESHOLD} to ${MAX_THRESHOLD}.`,
-        );
-      }
-      team.leadThreshold = threshold;
     }
     const leadPersonId =
       patch.leadPersonId === undefined ? undefined : patch.leadPersonId || null;
@@ -188,7 +169,6 @@ export class TeamsService {
       id: team.id,
       name: team.name,
       leadPersonId: team.leadPersonId ?? null,
-      leadThreshold: team.leadThreshold,
       memberIds: members
         .filter((row) => row.teamId === team.id)
         .map((row) => row.personId)

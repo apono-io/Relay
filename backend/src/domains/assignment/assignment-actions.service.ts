@@ -225,6 +225,7 @@ export class AssignmentActionsService {
       config: DEFAULT_ENGINE_CONFIG,
     };
     let team: TeamView | null = null;
+    let leadThreshold: number | null = null;
     let leadFallback = false;
     let leadReason: LeadReason | null = null;
     let result = AssignmentEngine.rank(rankInput);
@@ -235,7 +236,12 @@ export class AssignmentActionsService {
           "The author isn't on a team in Relay yet — an admin adds people to teams in System settings → Teams.",
         );
       }
-      ({ result, leadFallback, leadReason } = pickWithinTeam(rankInput, team));
+      leadThreshold = await this.appSettings.teamLeadThreshold();
+      ({ result, leadFallback, leadReason } = pickWithinTeam(
+        rankInput,
+        team,
+        leadThreshold,
+      ));
     }
     const pick = result.picks[0];
     if (!pick) {
@@ -321,7 +327,7 @@ export class AssignmentActionsService {
       sensitivity: area.area ? area.risk : null,
       teamName: team?.name ?? null,
       teamLeadFallback: team ? leadFallback : null,
-      teamLeadThreshold: team?.leadThreshold ?? null,
+      teamLeadThreshold: leadThreshold,
       teamLeadReason: team ? leadReason : null,
     };
   }

@@ -21,9 +21,6 @@ export class Team {
   @Column({ type: 'uuid', nullable: true })
   leadPersonId: string | null;
 
-  @Column({ default: 2 })
-  leadThreshold: number;
-
   @CreateDateColumn()
   createdAt: Date;
 

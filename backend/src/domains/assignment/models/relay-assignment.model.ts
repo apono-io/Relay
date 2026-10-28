@@ -53,4 +53,8 @@ export class RelayAssignment {
 export class AssignmentSettings {
   @Field()
   actuallyAssign: boolean;
+
+  // Applies to every team; see AppSettingsService.teamLeadThreshold.
+  @Field(() => Int)
+  teamLeadThreshold: number;
 }

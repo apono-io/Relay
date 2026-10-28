@@ -65,8 +65,8 @@ export class AssignmentResolver {
 
   @Query(() => AssignmentSettings, { name: 'assignmentSettings' })
   @RequirePermissions(Permissions.SETTINGS_ADMIN)
-  async assignmentSettings(): Promise<AssignmentSettings> {
-    return { actuallyAssign: await this.appSettings.actuallyAssign() };
+  assignmentSettings(): Promise<AssignmentSettings> {
+    return this.settings();
   }
 
   @Mutation(() => AssignmentSettings, { name: 'setActuallyAssign' })
@@ -74,8 +74,24 @@ export class AssignmentResolver {
   async setActuallyAssign(
     @Args('enabled') enabled: boolean,
   ): Promise<AssignmentSettings> {
-    return {
-      actuallyAssign: await this.appSettings.setActuallyAssign(enabled),
-    };
+    await this.appSettings.setActuallyAssign(enabled);
+    return this.settings();
+  }
+
+  @Mutation(() => AssignmentSettings, { name: 'setTeamLeadThreshold' })
+  @RequirePermissions(Permissions.SETTINGS_ADMIN)
+  async setTeamLeadThreshold(
+    @Args('value', { type: () => Int }) value: number,
+  ): Promise<AssignmentSettings> {
+    await this.appSettings.setTeamLeadThreshold(value);
+    return this.settings();
+  }
+
+  private async settings(): Promise<AssignmentSettings> {
+    const [actuallyAssign, teamLeadThreshold] = await Promise.all([
+      this.appSettings.actuallyAssign(),
+      this.appSettings.teamLeadThreshold(),
+    ]);
+    return { actuallyAssign, teamLeadThreshold };
   }
 }

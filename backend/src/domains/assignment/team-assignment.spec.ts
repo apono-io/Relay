@@ -36,9 +36,9 @@ const TEAM: TeamView = {
   id: 't1',
   name: 'Platform',
   leadPersonId: 'lead',
-  leadThreshold: 2,
   memberIds: ['m1', 'm2'],
 };
+const THRESHOLD = 2;
 
 describe('pickWithinTeam', () => {
   it('picks among members while one of them is free', () => {
@@ -50,6 +50,7 @@ describe('pickWithinTeam', () => {
         person('outsider'),
       ]),
       TEAM,
+      THRESHOLD,
     );
     expect(leadFallback).toBe(false);
     expect(result.picks[0].personId).toBe('m2');
@@ -67,6 +68,7 @@ describe('pickWithinTeam', () => {
         person('lead', { openReviewRequests: 5 }),
       ]),
       TEAM,
+      THRESHOLD,
     );
     expect(leadReason).toBe('loaded');
     expect(leadFallback).toBe(true);
@@ -81,6 +83,7 @@ describe('pickWithinTeam', () => {
         person('lead'),
       ]),
       TEAM,
+      THRESHOLD,
     );
     expect(leadReason).toBe('unavailable');
     expect(leadFallback).toBe(true);
@@ -98,6 +101,7 @@ describe('pickWithinTeam', () => {
         'lead',
       ),
       TEAM,
+      THRESHOLD,
     );
     expect(leadFallback).toBe(false);
     expect(result.picks[0].personId).toBe('m2');
@@ -111,6 +115,7 @@ describe('pickWithinTeam', () => {
         person('lead', { assignmentMode: 'off' }),
       ]),
       TEAM,
+      THRESHOLD,
     );
     expect(leadFallback).toBe(false);
     expect(result.picks[0].personId).toBe('m1');
@@ -124,6 +129,7 @@ describe('pickWithinTeam', () => {
         person('outsider'),
       ]),
       TEAM,
+      THRESHOLD,
     );
     expect(result.picks).toEqual([]);
   });

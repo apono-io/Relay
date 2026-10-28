@@ -126,7 +126,10 @@ function setup() {
   const candidateStats = {
     build: jest.fn().mockResolvedValue(statsWith(reviewerPool())),
   };
-  const appSettings = { actuallyAssign: jest.fn().mockResolvedValue(false) };
+  const appSettings = {
+    actuallyAssign: jest.fn().mockResolvedValue(false),
+    teamLeadThreshold: jest.fn().mockResolvedValue(2),
+  };
   const github = {
     requestReviewers: jest.fn().mockResolvedValue(undefined),
     removeRequestedReviewers: jest.fn().mockResolvedValue(undefined),
@@ -323,7 +326,6 @@ describe('AssignmentActionsService.assign within a team', () => {
     id: 't1',
     name: 'Platform',
     leadPersonId: null,
-    leadThreshold: 2,
     memberIds: ['p-second'],
     ...overrides,
   });
@@ -381,6 +383,27 @@ describe('AssignmentActionsService.assign within a team', () => {
       teamLeadFallback: true,
       teamLeadThreshold: 2,
       teamLeadReason: 'loaded',
+    });
+  });
+
+  it('asks the lead by the global threshold, not a per-team one', async () => {
+    const { service, prRepo, teams, appSettings } = setup();
+    prRepo.findOne.mockResolvedValue(openPr());
+    appSettings.teamLeadThreshold.mockResolvedValue(6);
+    teams.teamOf.mockResolvedValue(
+      team({ memberIds: ['p-swamped'], leadPersonId: 'p-expert' }),
+    );
+    const result = await service.assign(
+      'org/app',
+      11405,
+      'p-author',
+      'comment',
+      'team',
+    );
+    expect(result).toMatchObject({
+      login: 'swamped',
+      teamLeadFallback: false,
+      teamLeadThreshold: 6,
     });
   });
 

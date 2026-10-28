@@ -92,7 +92,7 @@ export function TeamsSettings() {
     });
   };
 
-  const update = (team: Team, input: Partial<Pick<Team, 'name' | 'leadPersonId' | 'leadThreshold'>>) =>
+  const update = (team: Team, input: Partial<Pick<Team, 'name' | 'leadPersonId'>>) =>
     void run(() => updateTeam({ variables: { id: team.id, input } }));
 
   const setMembers = (team: Team, personIds: string[]) =>
@@ -124,7 +124,8 @@ export function TeamsSettings() {
             @relay team
           </Box>{' '}
           picks a reviewer from the pull request author&apos;s team. The lead is asked only when
-          every other member already has the threshold of open reviews or more.
+          every other member already has the lead threshold of open reviews or more. The
+          threshold is one setting for every team, under Assignment engine.
         </Typography>
       </Box>
 
@@ -167,7 +168,6 @@ export function TeamsSettings() {
               <TableRow>
                 <TableCell>Team</TableCell>
                 <TableCell>Lead</TableCell>
-                <TableCell>Lead threshold</TableCell>
                 <TableCell>Members</TableCell>
                 <TableCell align="right" />
               </TableRow>
@@ -216,23 +216,6 @@ export function TeamsSettings() {
                         ))}
                     </Select>
                   </TableCell>
-                  <TableCell sx={{ width: 140 }}>
-                    <Tooltip title="Open reviews every other member needs before the lead is asked">
-                      <TextField
-                        size="small"
-                        type="number"
-                        defaultValue={team.leadThreshold}
-                        onBlur={(event) => {
-                          const next = Number(event.target.value);
-                          if (next !== team.leadThreshold) {
-                            update(team, { leadThreshold: next });
-                          }
-                        }}
-                        inputProps={{ min: 1, max: 20, 'aria-label': 'Lead threshold' }}
-                        sx={{ width: 90 }}
-                      />
-                    </Tooltip>
-                  </TableCell>
                   <TableCell sx={{ minWidth: 280 }}>
                     <Autocomplete
                       multiple
@@ -279,7 +262,7 @@ export function TeamsSettings() {
               ))}
               {teams.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={4}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
                       No teams yet — create the first one above.
                     </Typography>

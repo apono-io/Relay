@@ -57,3 +57,38 @@ describe('AppSettingsService.setActuallyAssign', () => {
     await expect(service.actuallyAssign()).resolves.toBe(true);
   });
 });
+
+describe('AppSettingsService team lead threshold', () => {
+  it('reads 2 when nothing is saved', async () => {
+    const { service } = setup(true);
+    await expect(service.teamLeadThreshold()).resolves.toBe(2);
+  });
+
+  it('reads the saved threshold', async () => {
+    const { service, settingsRepo } = setup(true);
+    settingsRepo.findOne.mockResolvedValue({
+      key: 'assignment.teamLeadThreshold',
+      value: 4,
+    });
+    await expect(service.teamLeadThreshold()).resolves.toBe(4);
+  });
+
+  it('saves one threshold for every team', async () => {
+    const { service, settingsRepo } = setup(false);
+    await expect(service.setTeamLeadThreshold(5)).resolves.toBe(5);
+    expect(settingsRepo.save).toHaveBeenCalledWith({
+      key: 'assignment.teamLeadThreshold',
+      value: 5,
+    });
+  });
+
+  it('rejects a threshold outside 1..20 or not whole', async () => {
+    const { service, settingsRepo } = setup(true);
+    for (const value of [0, 21, 1.5]) {
+      await expect(service.setTeamLeadThreshold(value)).rejects.toThrow(
+        BadRequestException,
+      );
+    }
+    expect(settingsRepo.save).not.toHaveBeenCalled();
+  });
+});

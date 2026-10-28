@@ -94,6 +94,5 @@ export type Team = {
   id: string;
   name: string;
   leadPersonId: string | null;
-  leadThreshold: number;
   memberIds: string[];
 };

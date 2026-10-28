@@ -11,10 +11,14 @@ export type TeamPick = {
 };
 
 // Picks inside one team. The engine ranks the other members as usual; the lead is asked
-// only when every other member it could pick already has `leadThreshold` or more open
-// reviews. The engine is the eligibility oracle, so "free" and "lead available" count
-// only people it could actually pick, and the author is never picked.
-export function pickWithinTeam(input: RankInput, team: TeamView): TeamPick {
+// only when every other member it could pick already has `leadThreshold` (one global
+// setting) or more open reviews. The engine is the eligibility oracle, so "free" and
+// "lead available" count only people it could actually pick, and the author is never picked.
+export function pickWithinTeam(
+  input: RankInput,
+  team: TeamView,
+  leadThreshold: number,
+): TeamPick {
   const members = new Set(team.memberIds);
   const others = input.candidates.filter(
     (candidate) =>
@@ -24,7 +28,7 @@ export function pickWithinTeam(input: RankInput, team: TeamView): TeamPick {
   );
   const othersRanked = AssignmentEngine.rank({ ...input, candidates: others });
   const free = othersRanked.ranked.filter(
-    (entry) => entry.signals.openReviewRequests < team.leadThreshold,
+    (entry) => entry.signals.openReviewRequests < leadThreshold,
   );
   if (free.length > 0) {
     return { result: othersRanked, leadFallback: false, leadReason: null };

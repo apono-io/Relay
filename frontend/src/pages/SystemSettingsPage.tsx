@@ -9,6 +9,7 @@ import { TeamsSettings } from '@/components/system/TeamsSettings';
 import { AssignmentQuietPhase } from '@/components/system/AssignmentQuietPhase';
 import { EnginePerformance } from '@/components/system/EnginePerformance';
 import { AssignmentControls } from '@/components/system/AssignmentControls';
+import { TeamLeadThreshold } from '@/components/system/TeamLeadThreshold';
 import { SettingsTabs, resolveSettingsTab } from '@/components/shared/SettingsTabs';
 import { useAuth } from '@/context/AuthContext';
 import { PERSON_WRITE, SETTINGS_ADMIN } from '@/lib/permissions';
@@ -52,6 +53,7 @@ export function SystemSettingsPage() {
             {tab === 'engine' && (
               <Stack spacing={3}>
                 <AssignmentControls />
+                <TeamLeadThreshold />
                 <EnginePerformance />
                 <AssignmentQuietPhase />
               </Stack>

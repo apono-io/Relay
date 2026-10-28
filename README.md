@@ -29,8 +29,8 @@ frontend, Google OAuth for login, and Tilt for local orchestration.
   everyone else is loaded), `@relay skip` to keep Relay off that PR, or `@relay help`. Relay reads them
   within seconds and replies on the PR as `apono-relay[bot]` with the pick and why. While
   live assignment is off, the reply names the pick without notifying them.
-- **Teams** (in System settings, admins only) — name, lead, lead threshold and members,
-  one team per person.
+- **Teams** (in System settings, admins only) — name, lead and members, one team per
+  person. The lead threshold is one setting for every team, under Assignment engine.
 - **My Reviews** — the reviews still open for you; a PR you have approved drops out.
 - **People & roster** (in System settings, admins only) — people seeded from commit
   author emails, GitHub identity linking, manual entry, and an active/disabled switch

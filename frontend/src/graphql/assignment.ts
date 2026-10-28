@@ -54,6 +54,7 @@ export const ASSIGNMENT_SETTINGS_QUERY = gql`
   query AssignmentSettings {
     assignmentSettings {
       actuallyAssign
+      teamLeadThreshold
     }
   }
 `;
@@ -62,6 +63,16 @@ export const SET_ACTUALLY_ASSIGN = gql`
   mutation SetActuallyAssign($enabled: Boolean!) {
     setActuallyAssign(enabled: $enabled) {
       actuallyAssign
+      teamLeadThreshold
+    }
+  }
+`;
+
+export const SET_TEAM_LEAD_THRESHOLD = gql`
+  mutation SetTeamLeadThreshold($value: Int!) {
+    setTeamLeadThreshold(value: $value) {
+      actuallyAssign
+      teamLeadThreshold
     }
   }
 `;

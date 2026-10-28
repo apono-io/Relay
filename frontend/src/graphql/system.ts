@@ -141,7 +141,6 @@ const TEAM_FIELDS = gql`
     id
     name
     leadPersonId
-    leadThreshold
     memberIds
   }
 `;
