@@ -56,6 +56,7 @@ type PickedReviewer = Pick<
   | 'teamName'
   | 'teamLeadFallback'
   | 'teamLeadThreshold'
+  | 'teamLeadReason'
 >;
 type HandledCommand = CommandResult & {
   pick?: PickedReviewer;
@@ -322,13 +323,19 @@ function areaLine(pick: PickedReviewer): string | null {
   return `This pull request touches **${pick.area}** · Sensitivity ${dots} ${SENSITIVITY_WORD[level]}`;
 }
 
-function teamLine(pick: PickedReviewer): string | null {
+// Says why the lead was asked, truthfully: loaded teammates, or nobody else pickable.
+// In test mode nobody was asked, so it says "would ask".
+function teamLine(pick: PickedReviewer, live: boolean): string | null {
   if (!pick.teamName) {
     return null;
   }
-  return pick.teamLeadFallback
-    ? `Everyone else on **${pick.teamName}** already has ${pick.teamLeadThreshold} or more open reviews, so Relay asked the team lead.`
-    : `From the **${pick.teamName}** team.`;
+  if (!pick.teamLeadFallback) {
+    return `From the **${pick.teamName}** team.`;
+  }
+  const asked = live ? 'asked' : 'would ask';
+  return pick.teamLeadReason === 'unavailable'
+    ? `Nobody else on **${pick.teamName}** can take this one right now, so Relay ${asked} the team lead.`
+    : `Everyone else on **${pick.teamName}** already has ${pick.teamLeadThreshold} or more open reviews, so Relay ${asked} the team lead.`;
 }
 
 const relayLink = (relayUrl: string): string =>
@@ -337,7 +344,7 @@ const relayLink = (relayUrl: string): string =>
 function assignedReply(pick: PickedReviewer, relayUrl: string): string {
   const live = pick.shadow === false;
   const area = areaLine(pick);
-  const team = teamLine(pick);
+  const team = teamLine(pick, live);
   // GitHub comments break lines on every newline, so each check sits on its own line.
   const lines = whyLines(pick).map((line) => {
     const mark = line.counted ? '✅' : '⚪';

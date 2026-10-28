@@ -44,6 +44,9 @@ export class RelayAssignment {
 
   @Field(() => Int, { nullable: true })
   teamLeadThreshold?: number | null;
+
+  @Field(() => String, { nullable: true })
+  teamLeadReason?: 'loaded' | 'unavailable' | null;
 }
 
 @ObjectType()

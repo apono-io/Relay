@@ -380,6 +380,7 @@ describe('AssignmentActionsService.assign within a team', () => {
       teamName: 'Platform',
       teamLeadFallback: true,
       teamLeadThreshold: 2,
+      teamLeadReason: 'loaded',
     });
   });
 

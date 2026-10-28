@@ -60,7 +60,7 @@ describe('pickWithinTeam', () => {
   });
 
   it('asks the lead when every other member is at the threshold', () => {
-    const { result, leadFallback } = pickWithinTeam(
+    const { result, leadFallback, leadReason } = pickWithinTeam(
       input([
         person('m1', { openReviewRequests: 2 }),
         person('m2', { openReviewRequests: 4 }),
@@ -68,12 +68,13 @@ describe('pickWithinTeam', () => {
       ]),
       TEAM,
     );
+    expect(leadReason).toBe('loaded');
     expect(leadFallback).toBe(true);
     expect(result.picks.map((entry) => entry.personId)).toEqual(['lead']);
   });
 
   it('asks the lead when no other member can be picked', () => {
-    const { result, leadFallback } = pickWithinTeam(
+    const { result, leadFallback, leadReason } = pickWithinTeam(
       input([
         person('m1', { assignmentMode: 'off' }),
         person('m2', { active: false }),
@@ -81,6 +82,7 @@ describe('pickWithinTeam', () => {
       ]),
       TEAM,
     );
+    expect(leadReason).toBe('unavailable');
     expect(leadFallback).toBe(true);
     expect(result.picks[0].personId).toBe('lead');
   });

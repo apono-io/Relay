@@ -1,7 +1,14 @@
 import { TeamView } from '@/domains/teams/teams.service';
 import { AssignmentEngine, RankInput, RankResult } from './assignment-engine';
 
-export type TeamPick = { result: RankResult; leadFallback: boolean };
+// Why the lead was asked: everyone else is loaded, or nobody else can be picked at all.
+export type LeadReason = 'loaded' | 'unavailable';
+
+export type TeamPick = {
+  result: RankResult;
+  leadFallback: boolean;
+  leadReason: LeadReason | null;
+};
 
 // Picks inside one team. The engine ranks the other members as usual; the lead is asked
 // only when every other member it could pick already has `leadThreshold` or more open
@@ -20,7 +27,7 @@ export function pickWithinTeam(input: RankInput, team: TeamView): TeamPick {
     (entry) => entry.signals.openReviewRequests < team.leadThreshold,
   );
   if (free.length > 0) {
-    return { result: othersRanked, leadFallback: false };
+    return { result: othersRanked, leadFallback: false, leadReason: null };
   }
 
   const lead = input.candidates.find(
@@ -31,8 +38,12 @@ export function pickWithinTeam(input: RankInput, team: TeamView): TeamPick {
   if (lead) {
     const leadRanked = AssignmentEngine.rank({ ...input, candidates: [lead] });
     if (leadRanked.picks.length > 0) {
-      return { result: leadRanked, leadFallback: true };
+      return {
+        result: leadRanked,
+        leadFallback: true,
+        leadReason: othersRanked.ranked.length > 0 ? 'loaded' : 'unavailable',
+      };
     }
   }
-  return { result: othersRanked, leadFallback: false };
+  return { result: othersRanked, leadFallback: false, leadReason: null };
 }

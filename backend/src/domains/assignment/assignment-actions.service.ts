@@ -22,7 +22,7 @@ import {
 } from './candidate-stats.service';
 import { AppSettingsService } from './app-settings.service';
 import { RelayAssignment } from './models/relay-assignment.model';
-import { pickWithinTeam } from './team-assignment';
+import { LeadReason, pickWithinTeam } from './team-assignment';
 import { TeamsService, TeamView } from '@/domains/teams/teams.service';
 
 export type AssignTrigger = 'manual' | 'auto' | 'comment';
@@ -226,6 +226,7 @@ export class AssignmentActionsService {
     };
     let team: TeamView | null = null;
     let leadFallback = false;
+    let leadReason: LeadReason | null = null;
     let result = AssignmentEngine.rank(rankInput);
     if (scope === 'team') {
       team = author ? await this.teams.teamOf(author.personId) : null;
@@ -234,7 +235,7 @@ export class AssignmentActionsService {
           "The author isn't on a team in Relay yet — an admin adds people to teams in System settings → Teams.",
         );
       }
-      ({ result, leadFallback } = pickWithinTeam(rankInput, team));
+      ({ result, leadFallback, leadReason } = pickWithinTeam(rankInput, team));
     }
     const pick = result.picks[0];
     if (!pick) {
@@ -321,6 +322,7 @@ export class AssignmentActionsService {
       teamName: team?.name ?? null,
       teamLeadFallback: team ? leadFallback : null,
       teamLeadThreshold: team?.leadThreshold ?? null,
+      teamLeadReason: team ? leadReason : null,
     };
   }
 

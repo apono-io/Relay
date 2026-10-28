@@ -622,3 +622,44 @@ describe('RelayCommandService teams, sensitivity and the Relay link', () => {
     ).toBe(true);
   });
 });
+
+describe('RelayCommandService lead-fallback wording', () => {
+  function replyFor(assignment: Record<string, unknown>) {
+    const ctx = setup([commandEvent('team')]);
+    ctx.actions.assign.mockResolvedValue({
+      login: 'Lead',
+      area: null,
+      reason: 'has no open reviews',
+      teamName: 'Platform',
+      teamLeadFallback: true,
+      teamLeadThreshold: 2,
+      ...assignment,
+    });
+    return ctx;
+  }
+  const body = (github: { createIssueComment: jest.Mock }) =>
+    github.createIssueComment.mock.calls[0][2] as string;
+
+  it('says nobody else can take it when the others cannot be picked', async () => {
+    const { service, github } = replyFor({
+      shadow: false,
+      teamLeadReason: 'unavailable',
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      'Nobody else on **Platform** can take this one right now, so Relay asked the team lead.',
+    );
+    expect(body(github)).not.toContain('already has');
+  });
+
+  it('says "would ask" in test mode', async () => {
+    const { service, github } = replyFor({
+      shadow: true,
+      teamLeadReason: 'loaded',
+    });
+    await service.processPending(NOW);
+    expect(body(github)).toContain(
+      'Everyone else on **Platform** already has 2 or more open reviews, so Relay would ask the team lead.',
+    );
+  });
+});
