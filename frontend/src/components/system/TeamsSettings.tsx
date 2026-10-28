@@ -39,7 +39,7 @@ const NO_LEAD = '';
 
 function personLabel(person: Person): string {
   const name = person.displayName || person.email;
-  return person.active ? name : `${name} (inactive)`;
+  return person.active ? name : `${name} (can't sign in)`;
 }
 
 export function TeamsSettings() {
