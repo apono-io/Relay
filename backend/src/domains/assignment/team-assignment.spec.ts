@@ -2,6 +2,8 @@ import { Candidate, RankInput } from './assignment-engine';
 import { pickWithinTeam } from './team-assignment';
 import { TeamView } from '@/domains/teams/teams.service';
 
+// Built with an assertion so the helper fits Candidate with or without the newer
+// per-person assignment switch; "not pickable" uses fields every version has.
 function person(
   personId: string,
   overrides: Partial<Candidate> = {},
@@ -17,7 +19,7 @@ function person(
     activeRelayPicks: 0,
     reviewsLast14Days: 0,
     ...overrides,
-  };
+  } as Candidate;
 }
 
 function input(candidates: Candidate[], authorPersonId = 'author'): RankInput {
@@ -73,7 +75,7 @@ describe('pickWithinTeam', () => {
   it('asks the lead when no other member can be picked', () => {
     const { result, leadFallback } = pickWithinTeam(
       input([
-        person('m1', { assignmentEnabled: false }),
+        person('m1', { assignmentMode: 'off' }),
         person('m2', { active: false }),
         person('lead'),
       ]),
@@ -104,7 +106,7 @@ describe('pickWithinTeam', () => {
       input([
         person('m1', { openReviewRequests: 2 }),
         person('m2', { openReviewRequests: 3 }),
-        person('lead', { assignmentEnabled: false }),
+        person('lead', { assignmentMode: 'off' }),
       ]),
       TEAM,
     );
