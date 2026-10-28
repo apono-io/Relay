@@ -61,3 +61,13 @@ export const SET_PERSON_ACTIVE = gql`
     }
   }
 `;
+
+export const SYNC_PEOPLE_FROM_GITHUB = gql`
+  mutation SyncPeopleFromGithub {
+    syncPeopleFromGithub {
+      peopleCreated
+      identitiesLinked
+      stillNeedEmail
+    }
+  }
+`;

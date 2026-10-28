@@ -22,6 +22,7 @@ import {
 } from '@mui/material';
 import PersonAddAltOutlinedIcon from '@mui/icons-material/PersonAddAltOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import { IdentityChips } from '@/components/people/IdentityChips';
 import { PersonFormDialog, PersonDraft } from '@/components/people/PersonFormDialog';
 import { DevAvatar, SoftChip } from '@/components/shared/pr-visuals';
@@ -30,6 +31,7 @@ import {
   PEOPLE_QUERY,
   ROSTER_HEALTH_QUERY,
   SET_PERSON_ACTIVE,
+  SYNC_PEOPLE_FROM_GITHUB,
   UPDATE_PERSON,
 } from '@/graphql/people';
 import { useAuth } from '@/context/AuthContext';
@@ -60,6 +62,16 @@ export function PeopleSettings() {
   };
 
   const [createPerson, createState] = useMutation(CREATE_PERSON, { onCompleted: refetchAll });
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [syncPeople, syncState] = useMutation<{
+    syncPeopleFromGithub: { peopleCreated: number; stillNeedEmail: string[] };
+  }>(SYNC_PEOPLE_FROM_GITHUB, {
+    onCompleted: ({ syncPeopleFromGithub: result }) => {
+      refetchAll();
+      setSyncNotice(syncMessage(result.peopleCreated, result.stillNeedEmail.length));
+    },
+    onError: (error) => setSyncNotice(`Sync failed: ${error.message}`),
+  });
   const [updatePerson, updateState] = useMutation(UPDATE_PERSON, { onCompleted: refetchAll });
   const [setPersonActive] = useMutation(SET_PERSON_ACTIVE, { onCompleted: refetchAll });
 
@@ -114,12 +126,34 @@ export function PeopleSettings() {
           </Typography>
         </Box>
         {canWrite && (
-          <Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => openAdd()}>
-            Add person
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Tooltip title="Look through recent commits for work email addresses and add the people Relay finds">
+              <span>
+                <Button
+                  variant="outlined"
+                  startIcon={<SyncRoundedIcon />}
+                  onClick={() => {
+                    setSyncNotice(null);
+                    void syncPeople();
+                  }}
+                  disabled={syncState.loading}
+                >
+                  {syncState.loading ? 'Syncing…' : 'Sync from GitHub'}
+                </Button>
+              </span>
+            </Tooltip>
+            <Button variant="contained" startIcon={<PersonAddAltOutlinedIcon />} onClick={() => openAdd()}>
+              Add person
+            </Button>
+          </Stack>
         )}
       </Stack>
 
+      {syncNotice && (
+        <Alert severity="info" onClose={() => setSyncNotice(null)}>
+          {syncNotice}
+        </Alert>
+      )}
       {saveError && <Alert severity="error">{saveError}</Alert>}
 
       {people.error && (
@@ -276,4 +310,16 @@ export function PeopleSettings() {
       />
     </Stack>
   );
+}
+
+function syncMessage(created: number, stillNeedEmail: number): string {
+  const added =
+    created > 0
+      ? `Added ${created} ${created === 1 ? 'person' : 'people'} from GitHub, with assignment off.`
+      : 'Everyone Relay can find in recent commits is already on the roster.';
+  const missing =
+    stillNeedEmail > 0
+      ? ` ${stillNeedEmail} GitHub ${stillNeedEmail === 1 ? 'account still needs' : 'accounts still need'} an Apono email — use Add person on their row.`
+      : '';
+  return added + missing;
 }

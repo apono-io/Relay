@@ -227,7 +227,11 @@ export class PeopleService {
     return created;
   }
 
-  async seedFromCommitEmails(): Promise<SeedSummary> {
+  // `probeDepth` looks further back per author (the Sync button); probes for unknown
+  // authors run a few at a time, while people are created one by one.
+  async seedFromCommitEmails(
+    options: { probeDepth?: number } = {},
+  ): Promise<SeedSummary> {
     const authors = await this.authorsWithRecentPullRequests();
     const summary: SeedSummary = {
       authorsScanned: authors.length,
@@ -241,15 +245,22 @@ export class PeopleService {
       PeopleService.name,
     );
 
+    const unknown: typeof authors = [];
     for (const author of authors) {
-      if (await this.findIdentity(author.login)) {
-        continue;
+      if (!(await this.findIdentity(author.login))) {
+        unknown.push(author);
       }
-
-      const probe = await this.commitEmailResolver.probe(
+    }
+    const probes = await mapWithLimit(unknown, PROBE_CONCURRENCY, (author) =>
+      this.commitEmailResolver.probe(
         author.login,
         author.pullRequests,
-      );
+        options.probeDepth,
+      ),
+    );
+
+    for (const [index, author] of unknown.entries()) {
+      const probe = probes[index];
       if (!probe.email) {
         summary.unresolved.push({
           login: author.login,
@@ -357,6 +368,28 @@ export class PeopleService {
     }
     return Array.from(byLogin.values());
   }
+}
+
+const PROBE_CONCURRENCY = 5;
+
+async function mapWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  work: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const runner = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await work(items[index]);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => runner()),
+  );
+  return results;
 }
 
 function isUniqueViolation(error: unknown): boolean {

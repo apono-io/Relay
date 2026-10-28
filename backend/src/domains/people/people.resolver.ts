@@ -3,6 +3,10 @@ import { NotFoundException, UseGuards } from '@nestjs/common';
 import { Person } from './entities/person.entity';
 import { PeopleService } from './people.service';
 import { RosterHealth } from './models/roster-health.model';
+import { PeopleSyncResult } from './models/people-sync.model';
+
+// The Sync button looks further back than the default seed to find work addresses.
+const SYNC_PROBE_DEPTH = 25;
 import {
   CreatePersonInput,
   UpdatePersonInput,
@@ -29,6 +33,19 @@ export class PeopleResolver {
       this.peopleService.unresolvedIdentities(),
     ]);
     return { unmappedLogins, unresolvedPeople };
+  }
+
+  @Mutation(() => PeopleSyncResult, { name: 'syncPeopleFromGithub' })
+  @RequirePermissions(Permissions.PERSON_WRITE)
+  async syncPeopleFromGithub(): Promise<PeopleSyncResult> {
+    const summary = await this.peopleService.seedFromCommitEmails({
+      probeDepth: SYNC_PROBE_DEPTH,
+    });
+    return {
+      peopleCreated: summary.peopleCreated,
+      identitiesLinked: summary.identitiesLinked,
+      stillNeedEmail: summary.unresolved.map((entry) => entry.login),
+    };
   }
 
   @Mutation(() => Person, { name: 'createPerson' })

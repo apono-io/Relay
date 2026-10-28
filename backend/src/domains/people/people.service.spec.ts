@@ -105,3 +105,84 @@ describe('PeopleService.pickDisplayLogin', () => {
     expect(PeopleService.pickDisplayLogin(identities)).toBe('first');
   });
 });
+
+describe('PeopleService.seedFromCommitEmails (Sync from GitHub)', () => {
+  function seeded(
+    authorCount: number,
+    emailFor: (login: string) => string | null,
+  ) {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const resolver = {
+      domain: () => 'apono.io',
+      probe: jest.fn(async (login: string) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        const email = emailFor(login);
+        return {
+          authorLogin: login,
+          email,
+          observedEmail: email ?? `${login}@gmail.com`,
+          logins: [login],
+          reason: email ? null : 'no_domain_email',
+        };
+      }),
+    };
+    const service = new PeopleService(
+      {} as never,
+      {} as never,
+      {} as never,
+      resolver as never,
+      { get: jest.fn() } as never,
+      { log: jest.fn(), warn: jest.fn(), error: jest.fn() } as never,
+    );
+    const authors = Array.from({ length: authorCount }, (_, i) => ({
+      login: `dev${i}`,
+      pullRequests: [{ repo: 'org/app', number: i + 1 }],
+    }));
+    const internals = service as unknown as Record<string, jest.Mock>;
+    internals.authorsWithRecentPullRequests = jest
+      .fn()
+      .mockResolvedValue(authors);
+    internals.findIdentity = jest.fn().mockResolvedValue(null);
+    internals.findByEmail = jest.fn().mockResolvedValue(null);
+    internals.ensurePerson = jest.fn(async (email: string) => ({
+      id: `p-${email}`,
+    }));
+    internals.recordIdentity = jest.fn().mockResolvedValue({ id: 'i1' });
+    return { service, resolver, internals, maxInFlight: () => maxInFlight };
+  }
+
+  it('looks as deep as asked for unknown authors', async () => {
+    const { service, resolver } = seeded(2, () => null);
+    await service.seedFromCommitEmails({ probeDepth: 25 });
+    expect(resolver.probe).toHaveBeenCalledWith(
+      'dev0',
+      [{ repo: 'org/app', number: 1 }],
+      25,
+    );
+  });
+
+  it('probes several authors at once, at most five', async () => {
+    const { service, maxInFlight } = seeded(12, () => null);
+    const summary = await service.seedFromCommitEmails({ probeDepth: 25 });
+    expect(maxInFlight()).toBeGreaterThan(1);
+    expect(maxInFlight()).toBeLessThanOrEqual(5);
+    expect(summary.unresolved).toHaveLength(12);
+  });
+
+  it('adds a person for each author whose commits carry a work address', async () => {
+    const { service, internals } = seeded(3, (login) =>
+      login === 'dev1' ? 'dev1@apono.io' : null,
+    );
+    const summary = await service.seedFromCommitEmails({ probeDepth: 25 });
+    expect(summary.peopleCreated).toBe(1);
+    expect(internals.ensurePerson).toHaveBeenCalledWith('dev1@apono.io');
+    expect(summary.unresolved.map((entry) => entry.login)).toEqual([
+      'dev0',
+      'dev2',
+    ]);
+  });
+});

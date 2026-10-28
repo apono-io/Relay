@@ -106,9 +106,11 @@ export class CommitEmailResolver {
     return this.allowedDomain;
   }
 
+  // `depth` overrides how many pull requests are probed (the Sync button looks deeper).
   async probe(
     authorLogin: string,
     pullRequests: { repo: string; number: number }[],
+    depth: number = this.pullRequestsToProbe,
   ): Promise<CommitEmailProbe> {
     if (pullRequests.length === 0) {
       return miss(authorLogin, 'no_pull_requests');
@@ -116,7 +118,7 @@ export class CommitEmailResolver {
 
     const misses: CommitEmailProbe[] = [];
 
-    for (const pullRequest of pullRequests.slice(0, this.pullRequestsToProbe)) {
+    for (const pullRequest of pullRequests.slice(0, depth)) {
       const commits = await this.fetchCommits(pullRequest);
       const result =
         commits === null

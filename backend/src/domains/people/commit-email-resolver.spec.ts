@@ -121,3 +121,46 @@ describe('CommitEmailResolver.selectIdentity', () => {
     expect(result.reason).toBe('no_domain_email');
   });
 });
+
+describe('CommitEmailResolver.probe depth', () => {
+  // 30 pull requests; only the 20th has a commit with the work address.
+  const pullRequests = Array.from({ length: 30 }, (_, i) => ({
+    repo: 'org/app',
+    number: i + 1,
+  }));
+  function resolver() {
+    const github = {
+      rest: jest.fn(async (_method: string, path: string) => {
+        const number = Number(/pulls\/(\d+)\/commits/.exec(path)?.[1]);
+        const email = number === 20 ? 'mike@apono.io' : 'mike@gmail.com';
+        return [
+          { author: { login: 'MikeCr4ft' }, commit: { author: { email } } },
+        ];
+      }),
+    };
+    const configService = { get: jest.fn() };
+    const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    return {
+      github,
+      resolver: new CommitEmailResolver(
+        github as never,
+        configService as never,
+        logger as never,
+      ),
+    };
+  }
+
+  it('looks at 3 pull requests by default', async () => {
+    const { resolver: r, github } = resolver();
+    const probe = await r.probe('MikeCr4ft', pullRequests);
+    expect(probe.email).toBeNull();
+    expect(github.rest).toHaveBeenCalledTimes(3);
+  });
+
+  it('looks deeper when asked, and stops at the first work address', async () => {
+    const { resolver: r, github } = resolver();
+    const probe = await r.probe('MikeCr4ft', pullRequests, 25);
+    expect(probe.email).toBe('mike@apono.io');
+    expect(github.rest).toHaveBeenCalledTimes(20);
+  });
+});
